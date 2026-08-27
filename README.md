@@ -31,6 +31,15 @@ CLAUDE.md              Regras permanentes para agentes Claude neste repo
 3. Aplicar as migrations pendentes em `supabase/migrations/` no SQL Editor do Supabase, em ordem numérica.
 4. `npm run dev` na raiz sobe os 4 apps juntos.
 
-## Próximo passo
+## Modo sombra (atual)
 
-A camada de IA (`apps/ai-orchestrator`) está em modo *sombra* (`IA_ENVIO_REAL=false` em `apps/whatsapp-worker`) — ela já investiga, decide e grava resposta, mas nada é enviado de verdade ao cliente ainda. Ver [docs/ROADMAP.md](docs/ROADMAP.md) para o que falta antes de ligar isso em produção (principalmente: sistema de gabarito/eval).
+A camada de IA (`apps/ai-orchestrator`) está em **modo sombra** (`IA_ENVIO_REAL=false` em `apps/whatsapp-worker`) — ela já investiga, decide e grava resposta, mas nada é enviado de verdade ao cliente ainda. Isso permite validar qualidade das respostas em produção sem risco.
+
+**Para verificar status e auditar respostas geradas:**
+```bash
+npm run -w apps/ai-orchestrator verificar-modo-sombra
+```
+
+**Documentação completa:** [docs/MODO_SOMBRA.md](docs/MODO_SOMBRA.md)
+
+**Ligar envio real:** Só depois de validação completa — ver critérios em `docs/MODO_SOMBRA.md` (todos os P0 do ROADMAP já estão concluídos ✅)

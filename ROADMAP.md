@@ -16,6 +16,15 @@ Só documentação — nada aqui foi implementado ainda, a menos que marcado `[x
 - **[P1] Alta** — confiabilidade/segurança de alto valor; resolve logo após os P0.
 - **[P2] Backlog** — hardening e melhorias que podem esperar.
 
+## Legenda de story points
+
+Escala Fibonacci (1, 2, 3, 5, 8, 13), estimativa relativa de esforço/complexidade — não é previsão de tempo. Estimativa inicial feita a partir do título/escopo de cada tarefa (sem análise linha a linha do arquivo de detalhes); revisar ao iniciar cada uma.
+
+- **1–2** — mudança pontual, escopo bem contido, baixo risco (ex.: ajuste de UI, config).
+- **3–5** — feature de tamanho médio, toca uma camada (API, IA ou schema) com alguma lógica nova.
+- **8** — feature que atravessa múltiplas camadas (IA + API + banco) ou tem ambiguidade de design a resolver.
+- **13** — épico que deveria ser quebrado em subtarefas antes de ser implementado; mantido como 13 até ser desmembrado.
+
 ---
 
 ## 0. Visão de produto e fases do MVP
@@ -48,30 +57,30 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 
 ### P0 — crítico
 
-- [x] **[P0] Gabarito/eval da camada de IA (rede de segurança de regressão).** ([detalhes](tasks/0001-gabarito_eval.md))
-- [x] **[P0] A IA deve ter acesso ao histórico completo de mensagens do atendimento (memória da conversa).** ([detalhes](tasks/0002-memoria_historico.md))
-- [x] **[P0] Ampliar a verificação anti-alucinação além de `R$`/PDF/código de pedido.** ([detalhes](tasks/0003-anti_alucinacao.md))
-- [x] **[P0] Vetar tipos sem fonte real + não passar afirmação não-verificada ao Atendente.** ([detalhes](tasks/0004-vetar_tipos_sem_fonte.md))
-- [ ] **[P0] `IA_ENVIO_REAL` continua `false` (modo sombra)** ([detalhes](tasks/0005-envio_real_sombra.md))
+- [x] **[P0] Gabarito/eval da camada de IA (rede de segurança de regressão).** `SP: 8` ([detalhes](tasks/0001-gabarito_eval.md))
+- [x] **[P0] A IA deve ter acesso ao histórico completo de mensagens do atendimento (memória da conversa).** `SP: 5` ([detalhes](tasks/0002-memoria_historico.md))
+- [x] **[P0] Ampliar a verificação anti-alucinação além de `R$`/PDF/código de pedido.** `SP: 5` ([detalhes](tasks/0003-anti_alucinacao.md))
+- [x] **[P0] Vetar tipos sem fonte real + não passar afirmação não-verificada ao Atendente.** `SP: 5` ([detalhes](tasks/0004-vetar_tipos_sem_fonte.md))
+- [x] **[P0] `IA_ENVIO_REAL` continua `false` (modo sombra)** `SP: 3` ([detalhes](tasks/0005-envio_real_sombra.md))
 
 ### P1 — alta
 
-- [x] **[P1] Fazer valer `ia_configuracoes.comportamento_json`.** ([detalhes](tasks/0006-comportamento_json.md))
-- [x] **[P1] Alinhar a matriz de decisão com a spec: "confiança média → investigar mais".** ([detalhes](tasks/0007-matriz_decisao.md))
-- [x] **[P1] Identidade da IA.** ([detalhes](tasks/0008-identidade_ia.md))
-- [x] **[P1] Cliente manda imagem/áudio → handoff em vez de silêncio.** ([detalhes](tasks/0009-midia_handoff.md))
-- [ ] **[P1] Guard determinístico contra prompt injection via conhecimento/resultados de ferramenta.** ([detalhes](tasks/0010-guard_prompt_injection.md))
-- [ ] **[P1] `ia_sessoes` em uso (memória derivada da conversa).** ([detalhes](tasks/0011-ia_sessoes.md))
-- [ ] **[P1] Simulador da IA.** ([detalhes](tasks/0012-simulador_ia.md))
+- [x] **[P1] Fazer valer `ia_configuracoes.comportamento_json`.** `SP: 5` ([detalhes](tasks/0006-comportamento_json.md))
+- [x] **[P1] Alinhar a matriz de decisão com a spec: "confiança média → investigar mais".** `SP: 3` ([detalhes](tasks/0007-matriz_decisao.md))
+- [x] **[P1] Identidade da IA.** `SP: 2` ([detalhes](tasks/0008-identidade_ia.md))
+- [x] **[P1] Cliente manda imagem/áudio → handoff em vez de silêncio.** `SP: 3` ([detalhes](tasks/0009-midia_handoff.md))
+- [ ] **[P1] Guard determinístico contra prompt injection via conhecimento/resultados de ferramenta.** `SP: 8` ([detalhes](tasks/0010-guard_prompt_injection.md))
+- [ ] **[P1] `ia_sessoes` em uso (memória derivada da conversa).** `SP: 5` ([detalhes](tasks/0011-ia_sessoes.md))
+- [ ] **[P1] Simulador da IA.** `SP: 8` ([detalhes](tasks/0012-simulador_ia.md))
 
 ---
 
 ## 2. Atendimento (Kanban / conversa) — P2
 
-- [ ] **[P2] Finalizar atendimento.** ([detalhes](tasks/0013-finalizar_atendimento.md))
-- [ ] **[P2] Devolver atendimento pra IA.** ([detalhes](tasks/0014-devolver_atendimento.md))
-- [ ] **[P2] `POST /atendimentos/:id/status` não valida transição nenhuma.** ([detalhes](tasks/0015-validar_transicao_status.md))
-- [ ] **[P2] Cliente (CRM simplificado) — campos de personalização ainda não confirmados em uso.** ([detalhes](tasks/0016-crm_personalizacao.md))
+- [ ] **[P2] Finalizar atendimento.** `SP: 2` ([detalhes](tasks/0013-finalizar_atendimento.md))
+- [ ] **[P2] Devolver atendimento pra IA.** `SP: 2` ([detalhes](tasks/0014-devolver_atendimento.md))
+- [ ] **[P2] `POST /atendimentos/:id/status` não valida transição nenhuma.** `SP: 3` ([detalhes](tasks/0015-validar_transicao_status.md))
+- [ ] **[P2] Cliente (CRM simplificado) — campos de personalização ainda não confirmados em uso.** `SP: 3` ([detalhes](tasks/0016-crm_personalizacao.md))
 
 ## 3. Camada de IA — MVP 2 e além (P2)
 
@@ -79,60 +88,60 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 
 Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** uma venda. Nenhum destes itens tem fluxo conversacional implementado ainda. Ordem de dependência: item 1 é pré-requisito de todos os outros.
 
-- [ ] **[P1] `criar_pedido` — tool de escrita com fluxo conversacional guiado, orientado a estado estruturado (não histórico de chat).** ([detalhes](tasks/0017-tool_escrita.md))
-- [ ] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** ([detalhes](tasks/0018-tipo_entrega.md))
-- [ ] **[P1] Perguntar/confirmar forma de pagamento.** ([detalhes](tasks/0019-forma_pagamento.md))
-- [ ] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** ([detalhes](tasks/0020-endereco_cliente.md))
-- [ ] **[P2] Tools de escrita restantes: `adicionar_item`, `alterar_item`, `cancelar_pedido`, `atualizar_cliente`.** ([detalhes](tasks/0021-tools_escrita_restantes.md))
-- [ ] **[P2] Fluxo de confirmação humana fora do texto livre** ([detalhes](tasks/0022-confirmacao_humana.md))
-- [ ] **[P2] Risco real na matriz de decisão + enforcement das permissões de escrita.** ([detalhes](tasks/0023-risco_matriz_decisao.md))
-- [ ] **[P2] Topologia de processos do `ai-orchestrator` — migrar de "1 processo por empresa" para "1 processo compartilhado".** ([detalhes](tasks/0024-topologia_orchestrator.md))
-- [ ] **[P2] Cache.** ([detalhes](tasks/0025-cache.md))
-- [ ] **[P2] Embeddings/versionamento de conhecimento** ([detalhes](tasks/0026-embeddings_versionamento.md))
-- [ ] **[P2] `whatsapp-web.js` não é a API oficial do WhatsApp Business.** ([detalhes](tasks/0027-whatsapp_nao_oficial.md))
-- [x] **Modo teste com whitelist de números.** ([detalhes](tasks/0028-modo_teste_whitelist.md))
-- [ ] **[P2] Princípio explícito do usuário: `.env` deve conter só dados de conexão com o Supabase — todo o resto vira configuração no banco, por empresa, com gestão via UI.** ([detalhes](tasks/0029-env_so_supabase.md))
-- [x] **Agrupar mensagens rápidas do cliente antes de responder.** ([detalhes](tasks/0030-agrupar_mensagens.md))
-- [x] **Formatação das respostas deve usar a sintaxe real do WhatsApp, não Markdown genérico.** ([detalhes](tasks/0031-formatacao_whatsapp.md))
-- [ ] **[P2] Ferramentas de operação — confirmar cobertura completa.** ([detalhes](tasks/0032-ferramentas_operacao.md))
+- [ ] **[P1] `criar_pedido` — tool de escrita com fluxo conversacional guiado, orientado a estado estruturado (não histórico de chat).** `SP: 13` ([detalhes](tasks/0017-tool_escrita.md))
+- [ ] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** `SP: 3` ([detalhes](tasks/0018-tipo_entrega.md))
+- [ ] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
+- [ ] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
+- [ ] **[P2] Tools de escrita restantes: `adicionar_item`, `alterar_item`, `cancelar_pedido`, `atualizar_cliente`.** `SP: 13` ([detalhes](tasks/0021-tools_escrita_restantes.md))
+- [ ] **[P2] Fluxo de confirmação humana fora do texto livre** `SP: 8` ([detalhes](tasks/0022-confirmacao_humana.md))
+- [ ] **[P2] Risco real na matriz de decisão + enforcement das permissões de escrita.** `SP: 8` ([detalhes](tasks/0023-risco_matriz_decisao.md))
+- [ ] **[P2] Topologia de processos do `ai-orchestrator` — migrar de "1 processo por empresa" para "1 processo compartilhado".** `SP: 8` ([detalhes](tasks/0024-topologia_orchestrator.md))
+- [ ] **[P2] Cache.** `SP: 5` ([detalhes](tasks/0025-cache.md))
+- [ ] **[P2] Embeddings/versionamento de conhecimento** `SP: 8` ([detalhes](tasks/0026-embeddings_versionamento.md))
+- [ ] **[P2] `whatsapp-web.js` não é a API oficial do WhatsApp Business.** `SP: 13` ([detalhes](tasks/0027-whatsapp_nao_oficial.md))
+- [x] **Modo teste com whitelist de números.** `SP: 2` ([detalhes](tasks/0028-modo_teste_whitelist.md))
+- [ ] **[P2] Princípio explícito do usuário: `.env` deve conter só dados de conexão com o Supabase — todo o resto vira configuração no banco, por empresa, com gestão via UI.** `SP: 5` ([detalhes](tasks/0029-env_so_supabase.md))
+- [x] **Agrupar mensagens rápidas do cliente antes de responder.** `SP: 3` ([detalhes](tasks/0030-agrupar_mensagens.md))
+- [x] **Formatação das respostas deve usar a sintaxe real do WhatsApp, não Markdown genérico.** `SP: 2` ([detalhes](tasks/0031-formatacao_whatsapp.md))
+- [ ] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
 
 ## 4. Design — P2
 
-- [ ] **[P2] Evoluir o design system com base nos padrões de UX do portal de parceiros do iFood.** ([detalhes](tasks/0033-design_system_ifood.md))
-- [ ] **[P2] Nenhuma tela foi testada em mobile/tablet** ([detalhes](tasks/0034-telas_mobile.md))
-- [x] **[P2] Contraste ruim em botões e outros elementos.** ([detalhes](tasks/0035-contraste_botoes.md))
-- [x] **[P2] Tema — trocado de dark-only pra light-only (decisão do usuário, não os dois com toggle).** ([detalhes](tasks/0036-tema_light.md))
-- [x] **Cores de status — regra permanente de uso consistente em toda a plataforma.** ([detalhes](tasks/0037-cores_status.md))
+- [ ] **[P2] Evoluir o design system com base nos padrões de UX do portal de parceiros do iFood.** `SP: 8` ([detalhes](tasks/0033-design_system_ifood.md))
+- [ ] **[P2] Nenhuma tela foi testada em mobile/tablet** `SP: 5` ([detalhes](tasks/0034-telas_mobile.md))
+- [x] **[P2] Contraste ruim em botões e outros elementos.** `SP: 2` ([detalhes](tasks/0035-contraste_botoes.md))
+- [x] **[P2] Tema — trocado de dark-only pra light-only (decisão do usuário, não os dois com toggle).** `SP: 3` ([detalhes](tasks/0036-tema_light.md))
+- [x] **Cores de status — regra permanente de uso consistente em toda a plataforma.** `SP: 2` ([detalhes](tasks/0037-cores_status.md))
 
 ## 5. Catálogo (Fase 2) — P2
 
-- [ ] **[P2] Upload de imagem de produto.** ([detalhes](tasks/0038-upload_imagem.md))
-- [ ] **[P2] Templates por segmento** ([detalhes](tasks/0039-templates_segmento.md))
-- [ ] **[P2] Promoções como conceito próprio** ([detalhes](tasks/0040-promocoes_proprias.md))
+- [ ] **[P2] Upload de imagem de produto.** `SP: 5` ([detalhes](tasks/0038-upload_imagem.md))
+- [ ] **[P2] Templates por segmento** `SP: 5` ([detalhes](tasks/0039-templates_segmento.md))
+- [ ] **[P2] Promoções como conceito próprio** `SP: 8` ([detalhes](tasks/0040-promocoes_proprias.md))
 
 ## 6. Pedidos (Fase 3) — P2
 
-- [ ] **[P2] Não dá pra editar itens de um pedido já criado** ([detalhes](tasks/0041-editar_itens_pedido.md))
-- [ ] **[P2] Gateway de pagamento real** ([detalhes](tasks/0042-gateway_pagamento.md))
-- [ ] **[P2] Página pública de cardápio/pedido (link direto, sem WhatsApp).** ([detalhes](tasks/0043-pagina_publica_pedido.md))
+- [ ] **[P2] Não dá pra editar itens de um pedido já criado** `SP: 5` ([detalhes](tasks/0041-editar_itens_pedido.md))
+- [ ] **[P2] Gateway de pagamento real** `SP: 13` ([detalhes](tasks/0042-gateway_pagamento.md))
+- [ ] **[P2] Página pública de cardápio/pedido (link direto, sem WhatsApp).** `SP: 8` ([detalhes](tasks/0043-pagina_publica_pedido.md))
 
 ## 7. Inteligência Comercial (Fase 4) — P2
 
-- [ ] **[P2] Campanhas de reengajamento** ([detalhes](tasks/0044-campanhas_reengajamento.md))
+- [ ] **[P2] Campanhas de reengajamento** `SP: 13` ([detalhes](tasks/0044-campanhas_reengajamento.md))
 
 ## 8. Telas do produto original ainda não implementadas — P2
 
-- [ ] **[P2] Dashboard operacional.** ([detalhes](tasks/0045-dashboard_operacional.md))
+- [ ] **[P2] Dashboard operacional.** `SP: 8` ([detalhes](tasks/0045-dashboard_operacional.md))
 
 ## 9. Multi-tenant / onboarding — P2
 
-- [ ] **[P2] Nenhum fluxo de cadastro de empresa nova** ([detalhes](tasks/0046-cadastro_empresa.md))
-- [ ] **[P2] Nenhuma tela de convite/gestão de usuários do painel** ([detalhes](tasks/0047-gestao_usuarios.md))
+- [ ] **[P2] Nenhum fluxo de cadastro de empresa nova** `SP: 8` ([detalhes](tasks/0046-cadastro_empresa.md))
+- [ ] **[P2] Nenhuma tela de convite/gestão de usuários do painel** `SP: 5` ([detalhes](tasks/0047-gestao_usuarios.md))
 
 ## 10. Infraestrutura / produção — P2
 
-- [ ] **[P2] Testes automatizados gerais + CI/CD.** ([detalhes](tasks/0048-testes_cicd.md))
-- [ ] **[P2] Nenhum rate limiting nas rotas HTTP de `apps/api`** ([detalhes](tasks/0049-rate_limiting.md))
-- [ ] **[P2] Autenticação de service account pra IA** ([detalhes](tasks/0050-service_account_ia.md))
-- [ ] **[P2] Nenhuma política de retenção/expurgo de dados pessoais de cliente** ([detalhes](tasks/0051-retencao_dados.md))
-- [x] **[P2] Multi-tenancy — banco compartilhado com RLS.** ([detalhes](tasks/0052-multi_tenancy_rls.md))
+- [ ] **[P2] Testes automatizados gerais + CI/CD.** `SP: 13` ([detalhes](tasks/0048-testes_cicd.md))
+- [ ] **[P2] Nenhum rate limiting nas rotas HTTP de `apps/api`** `SP: 3` ([detalhes](tasks/0049-rate_limiting.md))
+- [ ] **[P2] Autenticação de service account pra IA** `SP: 5` ([detalhes](tasks/0050-service_account_ia.md))
+- [ ] **[P2] Nenhuma política de retenção/expurgo de dados pessoais de cliente** `SP: 5` ([detalhes](tasks/0051-retencao_dados.md))
+- [x] **[P2] Multi-tenancy — banco compartilhado com RLS.** `SP: 8` ([detalhes](tasks/0052-multi_tenancy_rls.md))

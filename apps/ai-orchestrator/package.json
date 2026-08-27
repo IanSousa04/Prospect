@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "eval": "tsx src/eval/gabarito.ts"
+    "eval": "tsx src/eval/gabarito.ts",
+    "verificar-modo-sombra": "tsx src/scripts/verificar-modo-sombra.ts"
   },
   "dependencies": {
     "@prospect/shared": "*",

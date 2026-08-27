@@ -1,0 +1,5 @@
+{"timestamp":"2026-08-27T01:55:07.179Z","event":"TASK_SELECTED","taskFile":"tasks/0005-envio_real_sombra.md","title":"`IA_ENVIO_REAL` continua `false` (modo sombra)"}
+{"timestamp":"2026-08-27T01:55:07.182Z","event":"EXECUTION_STARTED","taskFile":"tasks/0005-envio_real_sombra.md"}
+{"timestamp":"2026-08-27T02:03:42.839Z","event":"EXECUTION_FINISHED","taskFile":"tasks/0005-envio_real_sombra.md","totalCostUsd":1.24968995,"numTurns":51}
+{"timestamp":"2026-08-27T02:04:03.275Z","event":"VALIDATION_PASSED","taskFile":"tasks/0005-envio_real_sombra.md"}
+{"timestamp":"2026-08-27T02:04:03.277Z","event":"TASK_COMPLETED","taskFile":"tasks/0005-envio_real_sombra.md"}

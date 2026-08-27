@@ -22,6 +22,18 @@ client.on("qr", (qr) => {
 
 client.on("ready", () => {
   console.log(`[whatsapp-worker] conectado — empresa ${env.empresaId}`);
+  console.log(
+    `[whatsapp-worker] modo de envio de IA: ${env.iaEnvioReal ? "⚠️  REAL (IA_ENVIO_REAL=true)" : "✅ SOMBRA (IA_ENVIO_REAL=false)"}`
+  );
+  if (!env.iaEnvioReal) {
+    console.log(
+      `[whatsapp-worker] LEMBRETE: respostas da IA serão geradas mas NÃO enviadas de verdade ao WhatsApp.\n` +
+      `  Para mudar isso (só depois de validação completa):\n` +
+      `  1. Leia docs/MODO_SOMBRA.md\n` +
+      `  2. Rode: npm run -w apps/ai-orchestrator verificar-modo-sombra\n` +
+      `  3. Mude IA_ENVIO_REAL=true no .env e reinicie este processo`
+    );
+  }
   iniciarPoller(client);
 });
 

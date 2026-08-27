@@ -47,11 +47,18 @@ export function iniciarPoller(client: Client): void {
       }
 
       if (msg.remetente === "ia" && !env.iaEnvioReal) {
-        console.log(`[poller] (modo sombra) resposta de IA NÃO enviada de verdade — atendimento ${msg.atendimento_id}: "${msg.conteudo}"`);
+        const agora = new Date().toISOString();
+        console.log(
+          `[poller] (MODO SOMBRA) resposta de IA NÃO enviada de verdade\n` +
+          `  Atendimento: ${msg.atendimento_id}\n` +
+          `  Cliente: ${destino}\n` +
+          `  Conteúdo: "${msg.conteudo.substring(0, 100)}${msg.conteudo.length > 100 ? "..." : ""}"\n` +
+          `  Timestamp simulação: ${agora}`
+        );
         await supabaseAdmin
           .from("mensagens")
           .update({
-            metadata_json: { ...(msg.metadata_json as object), simulado_em: new Date().toISOString() },
+            metadata_json: { ...(msg.metadata_json as object), simulado_em: agora },
           })
           .eq("id", msg.id);
         continue;
