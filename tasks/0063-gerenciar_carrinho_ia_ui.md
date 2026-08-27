@@ -1,0 +1,24 @@
+# Gerenciar o carrinho da IA (Order Context) direto da UI — humano edita o mesmo estado
+
+**Status:** concluído
+**Prioridade:** P1
+**Seção no ROADMAP:** 3. Camada de IA — MVP 2 e além
+
+Pedido do usuário, identificado ao vivo testando o painel "Carrinho (IA)" (tarefas 0053/0054): hoje esse painel na tela de Atendimento é só leitura — mostra o que a IA já montou em `ia_sessoes.estado_json.pedido`, mas nenhum humano consegue adicionar/remover item, mudar quantidade, definir tipo de entrega/endereço/forma de pagamento por ali. O "+ Novo pedido" existente (`PedidoBuilder`, `apps/web/src/components/PedidoBuilder.tsx`) cria um pedido **totalmente separado e desconectado** — se a IA já tinha montado um carrinho antes do humano assumir a conversa, o humano precisaria recomeçar do zero.
+
+**Decisão confirmada com o usuário:** o humano edita o **mesmo estado** que a IA usa (`ia_sessoes.estado_json.pedido`, tipos em `packages/shared/src/pedido-ia.ts`), não um pedido paralelo. Se o humano assumir uma conversa no meio de um carrinho que a IA já estava montando, ele continua exatamente de onde parou — vê os mesmos itens, pode ajustar, adicionar, remover, definir entrega/pagamento — antes de confirmar e virar um pedido real (tarefa 0055, ainda pendente, é quem finalmente cria a linha em `pedidos`/`itens_pedido` a partir desse mesmo estado, seja ele montado pela IA, por um humano, ou por ambos).
+
+## Escopo de implementação
+
+- **API** (`apps/api/src/routes/atendimentos.ts`): novos endpoints de escrita sobre `GET /atendimentos/:id/carrinho` (ex.: `POST /atendimentos/:id/carrinho/itens` — adicionar, `PATCH .../itens/:linha_id` — atualizar quantidade/observação, `DELETE .../itens/:linha_id` — remover, `PUT .../entrega` — tipo/endereço, `PUT .../pagamento` — forma). Reaproveitar as mesmas funções puras já existentes em `packages/shared/src/pedido-ia.ts` (`aplicarMutacaoCarrinho`, `encontrarLinhaEquivalente`, `pedidoVazio`) e `montarItensComSnapshot` (`@prospect/pedidos-core`) — a mesma garantia de preço/disponibilidade real que as tools da IA já têm (CLAUDE.md regra 1) vale igual quando é um humano editando.
+- **UI** (`apps/web/src/pages/Atendimento.tsx`): o painel "Carrinho (IA)" ganha controles de edição (adicionar produto via busca, +/- quantidade, remover linha, selects de tipo de entrega/forma de pagamento, campo de endereço) — deixa de ser só leitura.
+- **Concorrência**: IA e humano podem mutar o mesmo estado quase ao mesmo tempo (ex.: humano edita enquanto a IA ainda está processando uma mensagem do cliente) — like `mesclarEstado` em `agent/sessao.ts` já lê-modifica-grava, existe uma janela de corrida real. Decidir na implementação: aceitar "last write wins" (mesmo risco que já existe hoje entre `ultimo_produto_mencionado` e `pedido` na mesma linha) ou adicionar alguma forma de lock/versão otimista — avaliar se o risco real justifica a complexidade extra nesta fase.
+- Fora de escopo aqui: a criação do pedido real a partir desse estado (isso é a tarefa 0055) e o motor genérico de etapas (0056).
+
+## Resolução
+
+- **`packages/shared/src/pedido-ia.ts`**: `ResumoPedidoIa` ampliado pra estender `OrderContext` inteiro (antes só tinha `itens`/`subtotal`/`carrinho_confirmado`/`pendencias` — sem `tipo_entrega`/`endereco`/`forma_pagamento`/`status`, a UI editável não teria como saber o que já estava selecionado).
+- **API** (`apps/api/src/routes/atendimentos.ts`): `carregarPedidoIa`/`salvarPedidoIa` (lê-mescla-grava sobre `ia_sessoes.estado_json`, mesmo cuidado de `mesclarEstado` do lado da IA) + rotas `POST/PATCH/DELETE .../carrinho/itens[/:linhaId]` e `PUT .../carrinho/entrega`, `PUT .../carrinho/pagamento`. Toda adição/atualização de item revalida preço/disponibilidade via `montarItensComSnapshot` e mescla linha equivalente via `encontrarLinhaEquivalente` — exatamente as mesmas garantias que as tools da IA já tinham (CLAUDE.md regra 1), reaproveitadas, não reimplementadas.
+- **UI** (`apps/web/src/pages/Atendimento.tsx`): painel "Carrinho (IA)" deixou de ser só leitura — +/- de quantidade, remover linha, adicionar produto (select + quantidade, sem escolha de adicionais nesta primeira versão — corte de escopo deliberado), selects de tipo de entrega/forma de pagamento, campos de endereço com botão salvar. Painel agora aparece mesmo com carrinho vazio (antes só aparecia com itens), pra dar o humano começar do zero também.
+- **Concorrência**: ficou "last write wins" (mesmo risco que já existia entre `ultimo_produto_mencionado` e `pedido` na mesma linha) — não foi adicionado lock/versão otimista. Risco aceito nesta fase (poucas empresas piloto, poucas conversas simultâneas por atendimento).
+- Testado ao vivo (sessão logada real): mudar tipo de entrega pra "retirada" e incrementar quantidade de item, ambos confirmados direto no banco (`ia_sessoes.estado_json.pedido`) — mesmo estado que a IA está usando na mesma conversa.

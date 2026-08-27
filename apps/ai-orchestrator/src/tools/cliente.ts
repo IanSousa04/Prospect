@@ -53,13 +53,13 @@ async function buscarProdutoFavorito(
 registerTool({
   nome: "consultar_cliente",
   descricao:
-    "Consulta o cadastro do cliente desta conversa (nome, telefone, tags, primeira/última interação) e, quando a empresa permite, o produto favorito dele (mais pedido no histórico) — use para personalizar sugestões (ex.: repetir o de sempre ou sugerir novidade).",
+    "Consulta o cadastro do cliente desta conversa (nome, telefone, tags, endereço salvo da última entrega, primeira/última interação) e, quando a empresa permite, o produto favorito dele (mais pedido no histórico) — use para personalizar sugestões (ex.: repetir o de sempre ou sugerir novidade) e para confirmar reuso do endereço salvo antes de pedir tudo de novo.",
   parametrosJsonSchema: semParametros,
   risco: "baixo",
   executor: async (_input: unknown, ctx: ToolContext) => {
     const { data, error } = await supabaseAdmin
       .from("clientes")
-      .select("nome, telefone, tags, primeiro_contato_em, ultima_interacao_em")
+      .select("nome, telefone, tags, endereco_json, primeiro_contato_em, ultima_interacao_em")
       .eq("id", ctx.clienteId)
       .eq("empresa_id", ctx.empresaId)
       .maybeSingle();

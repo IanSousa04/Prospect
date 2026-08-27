@@ -18,6 +18,7 @@ import type {
   PedidoDetalhado,
   Produto,
   ProdutoDetalhado,
+  ResumoPedidoIa,
   StatusAtendimento,
   StatusPagamento,
   StatusPedido,
@@ -88,6 +89,58 @@ export const api = {
     const res = await authedFetch(`/atendimentos/${atendimentoId}/mensagens`, {
       method: "POST",
       body: JSON.stringify({ conteudo }),
+    });
+    return res.json();
+  },
+
+  async buscarCarrinhoIa(atendimentoId: string): Promise<ResumoPedidoIa> {
+    const res = await authedFetch(`/atendimentos/${atendimentoId}/carrinho`);
+    return res.json();
+  },
+
+  async adicionarItemCarrinhoIa(
+    atendimentoId: string,
+    body: { produto_id: string; quantidade: number; observacoes?: string | null; opcoes?: Array<{ opcao_id: string }> },
+  ): Promise<ResumoPedidoIa> {
+    const res = await authedFetch(`/atendimentos/${atendimentoId}/carrinho/itens`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  },
+
+  async atualizarItemCarrinhoIa(
+    atendimentoId: string,
+    linhaId: string,
+    body: { quantidade?: number; observacoes?: string | null },
+  ): Promise<ResumoPedidoIa> {
+    const res = await authedFetch(`/atendimentos/${atendimentoId}/carrinho/itens/${linhaId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  },
+
+  async removerItemCarrinhoIa(atendimentoId: string, linhaId: string): Promise<ResumoPedidoIa> {
+    const res = await authedFetch(`/atendimentos/${atendimentoId}/carrinho/itens/${linhaId}`, { method: "DELETE" });
+    return res.json();
+  },
+
+  async definirEntregaCarrinhoIa(
+    atendimentoId: string,
+    body: { tipo_entrega: TipoEntrega | null; endereco: EnderecoEntrega | null },
+  ): Promise<ResumoPedidoIa> {
+    const res = await authedFetch(`/atendimentos/${atendimentoId}/carrinho/entrega`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  },
+
+  async definirPagamentoCarrinhoIa(atendimentoId: string, forma_pagamento: FormaPagamento | null): Promise<ResumoPedidoIa> {
+    const res = await authedFetch(`/atendimentos/${atendimentoId}/carrinho/pagamento`, {
+      method: "PUT",
+      body: JSON.stringify({ forma_pagamento }),
     });
     return res.json();
   },

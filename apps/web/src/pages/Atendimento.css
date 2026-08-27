@@ -79,6 +79,20 @@
   gap: 10px;
   flex-shrink: 0;
 }
+/* Botões do cabeçalho (Devolver/Assumir/Finalizar) — pill arredondado,
+   fundo sólido mesmo no "ghost" (nunca transparente aqui), padding maior:
+   só sobrescreve dentro de .head-right, não a base .btn-ghost/.btn-primary/
+   .btn-success (reaproveitadas em outros botões da mesma página, ex.:
+   "+ Novo pedido", que continuam com o estilo original). */
+.head-right button {
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-size: 13px;
+}
+.head-right .btn-ghost {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+}
 .btn-primary {
   display: flex;
   align-items: center;
@@ -98,6 +112,32 @@
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.btn-success {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: white;
+  background: var(--success);
+  border: none;
+  border-radius: 7px;
+  padding: 8px 14px;
+}
+.btn-success svg {
+  width: 13px;
+  height: 13px;
+}
+.btn-success:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-success:not(:disabled):hover {
+  background: var(--success-hover);
+}
+.btn-primary:not(:disabled):hover {
+  background: var(--primary-hover);
 }
 
 .body {
@@ -341,13 +381,48 @@
 .ctx-section:last-child {
   border-bottom: none;
 }
+.ctx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
 .ctx-label {
   font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-3);
-  margin-bottom: 12px;
+}
+.ctx-header .ctx-label {
+  margin-bottom: 0;
+}
+.ctx-chevron {
+  display: flex;
+  color: var(--text-3);
+  transition: transform 0.15s ease;
+}
+.ctx-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+.ctx-chevron.aberta {
+  transform: rotate(180deg);
+}
+.ctx-body {
+  margin-top: 12px;
+}
+.ctx-sublabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+  margin-bottom: 6px;
 }
 
 .handoff-card {
@@ -408,6 +483,9 @@
 }
 
 .btn-ghost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-2);
@@ -415,6 +493,11 @@
   border-radius: 7px;
   padding: 8px 14px;
   background: transparent;
+}
+.btn-ghost svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .handoff-foot {
@@ -481,6 +564,125 @@
   border: 1px solid var(--border-soft);
   border-radius: 5px;
   padding: 3px 8px;
+}
+
+.carrinho-item-row {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--border-soft);
+}
+.carrinho-item-row:last-of-type {
+  border-bottom: none;
+}
+.carrinho-item-controles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.qtd-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+  color: var(--text-1);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.qtd-valor {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 16px;
+  text-align: center;
+}
+.carrinho-remover-btn {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--red);
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.carrinho-add-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.carrinho-add-row select {
+  flex: 1;
+  min-width: 0;
+}
+.carrinho-add-row input {
+  width: 48px;
+}
+.carrinho-add-row select,
+.carrinho-add-row input {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-1);
+  font-size: 12px;
+}
+.carrinho-field {
+  margin-top: 12px;
+}
+.carrinho-field label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.carrinho-field select {
+  width: 100%;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+.carrinho-endereco {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.carrinho-field-row {
+  display: flex;
+  gap: 6px;
+}
+.carrinho-field-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+.carrinho-pendencias {
+  margin-top: 12px;
+}
+.tag-pill-pendencia {
+  color: var(--amber);
+  background: var(--amber-bg);
+  border-color: var(--amber);
+}
+.carrinho-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
 }
 
 .intent-pill {

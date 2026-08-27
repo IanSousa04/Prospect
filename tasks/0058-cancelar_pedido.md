@@ -7,3 +7,5 @@
 **Depende de:** `criar_pedido` validado em produção (0053-0055), [Risco real na matriz de decisão (0023)](0023-risco_matriz_decisao.md)
 
 Sem executor registrado hoje, só existe como nome no enum `NOMES_FERRAMENTAS`. Ação irreversível com impacto financeiro/operacional real (mesma categoria de risco de `confirm_order`, ver 0055) — exige confiança alta + baixo risco + permissão explícita (CLAUDE.md regra 6), nunca só a IA decidindo cancelar porque "pareceu" que o cliente desistiu. Reaproveitar a transição `-> cancelado` já validada em `TRANSICOES` (`apps/api/src/routes/pedidos.ts`) — a tool não pode pular essa validação. Depende de 0023 estar em produção pra ter risco real avaliado antes de habilitar esta tool (hoje `agent/decisao.ts` sempre assume risco "baixo").
+
+**CLAUDE.md regra 8:** já satisfeita — o select de status na tela de Atendimento (`apps/web/src/pages/Atendimento.tsx`, `TRANSICOES_PEDIDO`) já inclui `cancelado` como transição possível pra humano, sobre o mesmo `pedidos.status` que esta tool vai mudar. Não precisa UI nova, só confirmar que os dois caminhos continuam consistentes.

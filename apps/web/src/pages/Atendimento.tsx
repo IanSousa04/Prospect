@@ -2,11 +2,17 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type {
   AtendimentoComContexto,
+  EnderecoEntrega,
+  FormaPagamento,
+  InformacaoPendente,
   MensagemComMidia,
   MidiaFalhaMensagem,
   MidiaMensagem,
   PedidoDetalhado,
+  Produto,
+  ResumoPedidoIa,
   StatusPedido,
+  TipoEntrega,
 } from "@prospect/shared";
 import { STATUS_PEDIDO_EDITAVEIS } from "@prospect/shared";
 import { api } from "../lib/api.js";
@@ -40,6 +46,17 @@ const STATUS_PEDIDO_LABEL: Record<StatusPedido, string> = {
   saiu_para_entrega: "Saiu para entrega",
   entregue: "Entregue",
   cancelado: "Cancelado",
+};
+
+// Espelha InformacaoPendente de packages/shared/src/pedido-ia.ts — só pra
+// exibir de forma legível o que falta no carrinho que a IA está montando.
+const PENDENCIA_LABEL: Record<InformacaoPendente, string> = {
+  produtos: "Adicionar produtos",
+  confirmar_carrinho: "Confirmar carrinho",
+  tipo_entrega: "Definir tipo de entrega",
+  endereco: "Informar endereço",
+  forma_pagamento: "Definir forma de pagamento",
+  confirmacao_final: "Confirmação final do pedido",
 };
 
 const IconBack = (
@@ -112,6 +129,18 @@ const IconDownload = (
     strokeLinejoin="round"
   >
     <path d="M12 3v12M7 10l5 5 5-5M4 21h16" />
+  </svg>
+);
+const IconChevron = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M6 9l6 6 6-6" />
   </svg>
 );
 const IconMidiaIndisponivel = (
@@ -209,6 +238,28 @@ function renderizarConteudoMensagem(m: MensagemComMidia): JSX.Element {
   );
 }
 
+/** Seção colapsável do painel lateral (Handoff/Pedido/Carrinho/Cliente/
+ * Intenção) — visual de referência: cabeçalho com chevron que gira,
+ * conteúdo recolhe sem sumir da árvore (mantém estado do formulário/scroll
+ * interno, se houver). Aberta por padrão; cada seção lembra seu próprio
+ * estado via `aberta`/`onToggle` do componente pai. */
+function Secao(props: {
+  titulo: string;
+  aberta: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="ctx-section">
+      <button className="ctx-header" onClick={props.onToggle}>
+        <span className="ctx-label">{props.titulo}</span>
+        <span className={`ctx-chevron ${props.aberta ? "aberta" : ""}`}>{IconChevron}</span>
+      </button>
+      {props.aberta && <div className="ctx-body">{props.children}</div>}
+    </div>
+  );
+}
+
 function iniciais(nome: string | null): string {
   if (!nome) return "?";
   return nome
@@ -229,16 +280,42 @@ export default function Atendimento() {
   const [rascunho, setRascunho] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [pedido, setPedido] = useState<PedidoDetalhado | null>(null);
+  const [carrinhoIa, setCarrinhoIa] = useState<ResumoPedidoIa | null>(null);
+  const [produtosCatalogo, setProdutosCatalogo] = useState<Produto[]>([]);
+  const [produtoParaAdicionar, setProdutoParaAdicionar] = useState("");
+  const [qtdParaAdicionar, setQtdParaAdicionar] = useState(1);
+  const [enderecoForm, setEnderecoForm] = useState<EnderecoEntrega>({ rua: "", numero: "", bairro: "", cidade: "" });
   const [mostrarPedidoBuilder, setMostrarPedidoBuilder] = useState(false);
+  const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>({
+    handoff: true,
+    carrinho: true,
+    pedido: true,
+    cliente: true,
+    intencao: true,
+  });
+  const alternarSecao = (chave: string) =>
+    setSecoesAbertas((s) => ({ ...s, [chave]: !s[chave] }));
+
+  useEffect(() => {
+    api.listarProdutos().then((lista) => setProdutosCatalogo(lista.filter((p) => p.status === "ativo")));
+  }, []);
 
   async function carregar() {
     if (!id) return;
-    const [a, m] = await Promise.all([
+    const [a, m, c] = await Promise.all([
       api.buscarAtendimento(id),
       api.listarMensagens(id),
+      api.buscarCarrinhoIa(id),
     ]);
     setAtendimento(a);
     setMensagens(m);
+    setCarrinhoIa(c);
+    // Só inicializa o form de endereço a partir do estado salvo — nunca
+    // sobrescreve o que o humano está digitando no meio de uma edição
+    // (ex.: realtime atualizando por causa de outra mudança da IA).
+    setEnderecoForm((atual) =>
+      atual.rua || atual.numero || atual.bairro || atual.cidade ? atual : c.endereco ?? atual,
+    );
     if (a.pedido_aberto) {
       api.buscarPedido(a.pedido_aberto.id).then(setPedido);
     } else {
@@ -278,6 +355,16 @@ export default function Atendimento() {
           event: "*",
           schema: "public",
           table: "pedidos",
+          filter: `atendimento_id=eq.${id}`,
+        },
+        () => carregar(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ia_sessoes",
           filter: `atendimento_id=eq.${id}`,
         },
         () => carregar(),
@@ -330,6 +417,75 @@ export default function Atendimento() {
           ? "Existe um handoff aberto/assumido para este atendimento — resolva-o antes de finalizar."
           : "Não foi possível finalizar o atendimento.";
       window.alert(mensagem);
+    }
+  }
+
+  // Edição do carrinho da IA pelo humano (tarefa 0063, CLAUDE.md regra 8) —
+  // mesmo estado que a IA usa (ia_sessoes.estado_json.pedido), nunca um
+  // pedido paralelo. Cada ação já volta o resumo atualizado da API, então
+  // atualiza o estado local direto (sem esperar o próximo `carregar()`).
+  async function adicionarItemCarrinho() {
+    if (!id || !produtoParaAdicionar) return;
+    try {
+      const atualizado = await api.adicionarItemCarrinhoIa(id, {
+        produto_id: produtoParaAdicionar,
+        quantidade: qtdParaAdicionar,
+      });
+      setCarrinhoIa(atualizado);
+      setProdutoParaAdicionar("");
+      setQtdParaAdicionar(1);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Não foi possível adicionar o item.");
+    }
+  }
+
+  async function alterarQuantidadeCarrinho(linhaId: string, novaQuantidade: number) {
+    if (!id || novaQuantidade < 1) return;
+    try {
+      setCarrinhoIa(await api.atualizarItemCarrinhoIa(id, linhaId, { quantidade: novaQuantidade }));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Não foi possível atualizar o item.");
+    }
+  }
+
+  async function removerItemCarrinho(linhaId: string) {
+    if (!id) return;
+    try {
+      setCarrinhoIa(await api.removerItemCarrinhoIa(id, linhaId));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Não foi possível remover o item.");
+    }
+  }
+
+  async function definirTipoEntregaCarrinho(tipo: TipoEntrega | "") {
+    if (!id) return;
+    try {
+      setCarrinhoIa(
+        await api.definirEntregaCarrinhoIa(id, {
+          tipo_entrega: tipo || null,
+          endereco: tipo === "entrega" ? carrinhoIa?.endereco ?? null : null,
+        }),
+      );
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Não foi possível definir o tipo de entrega.");
+    }
+  }
+
+  async function salvarEnderecoCarrinho() {
+    if (!id) return;
+    try {
+      setCarrinhoIa(await api.definirEntregaCarrinhoIa(id, { tipo_entrega: "entrega", endereco: enderecoForm }));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Não foi possível salvar o endereço.");
+    }
+  }
+
+  async function definirPagamentoCarrinho(forma: FormaPagamento | "") {
+    if (!id) return;
+    try {
+      setCarrinhoIa(await api.definirPagamentoCarrinhoIa(id, forma || null));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Não foi possível definir a forma de pagamento.");
     }
   }
 
@@ -402,7 +558,7 @@ export default function Atendimento() {
             Assumir atendimento
           </button>
           <button
-            className="btn-ghost"
+            className="btn-success"
             onClick={finalizar}
             disabled={!podeFinalizar}
           >
@@ -471,8 +627,11 @@ export default function Atendimento() {
 
         <div className="ctx">
           {atendimento.handoff_aberto && (
-            <div className="ctx-section">
-              <div className="ctx-label">Handoff pendente</div>
+            <Secao
+              titulo="Handoff pendente"
+              aberta={secoesAbertas.handoff ?? true}
+              onToggle={() => alternarSecao("handoff")}
+            >
               <div className="handoff-card">
                 <div className="handoff-head">
                   {STATUS_META.ia_solicitou_humano.icon}
@@ -522,11 +681,169 @@ export default function Atendimento() {
                   Assumir handoff
                 </button>
               </div>
-            </div>
+            </Secao>
           )}
 
-          <div className="ctx-section">
-            <div className="ctx-label">Pedido</div>
+          {/* Carrinho que a IA está montando (ia_sessoes.estado_json.pedido)
+              — editável pelo humano (tarefa 0063, CLAUDE.md regra 8): mesmo
+              estado que a IA usa, nunca um pedido paralelo. Some quando já
+              existe um pedido real (`pedido` — POST /pedidos ou confirmação
+              da IA, tarefa 0055), que passa a ser a fonte real no card
+              "Pedido" abaixo. */}
+          {!pedido && carrinhoIa && (
+            <Secao
+              titulo="Carrinho (IA)"
+              aberta={secoesAbertas.carrinho ?? true}
+              onToggle={() => alternarSecao("carrinho")}
+            >
+              <div className="order-card">
+                {carrinhoIa.itens.map((item) => {
+                  const precoComOpcoes =
+                    item.preco_unitario +
+                    item.opcoes.reduce((acc, o) => acc + o.preco_adicional, 0);
+                  return (
+                    <div key={item.linha_id} className="carrinho-item-row">
+                      <div className="order-item">
+                        <span>{item.nome_produto}</span>
+                        <span className="mono">{currency.format(precoComOpcoes * item.quantidade)}</span>
+                      </div>
+                      {item.observacoes && (
+                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>{item.observacoes}</div>
+                      )}
+                      {item.opcoes.length > 0 && (
+                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                          {item.opcoes.map((o) => o.nome_opcao).join(", ")}
+                        </div>
+                      )}
+                      <div className="carrinho-item-controles">
+                        <button className="qtd-btn" onClick={() => alterarQuantidadeCarrinho(item.linha_id, item.quantidade - 1)}>
+                          −
+                        </button>
+                        <span className="qtd-valor">{item.quantidade}</span>
+                        <button className="qtd-btn" onClick={() => alterarQuantidadeCarrinho(item.linha_id, item.quantidade + 1)}>
+                          +
+                        </button>
+                        <button className="carrinho-remover-btn" onClick={() => removerItemCarrinho(item.linha_id)}>
+                          Remover
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {carrinhoIa.itens.length === 0 && (
+                  <div style={{ fontSize: 12, color: "var(--text-3)" }}>Nenhum item ainda.</div>
+                )}
+
+                <div className="carrinho-add-row">
+                  <select value={produtoParaAdicionar} onChange={(e) => setProdutoParaAdicionar(e.target.value)}>
+                    <option value="">Adicionar produto…</option>
+                    {produtosCatalogo.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome} — {currency.format(p.preco_promocional ?? p.preco)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    value={qtdParaAdicionar}
+                    onChange={(e) => setQtdParaAdicionar(Math.max(1, Number(e.target.value)))}
+                  />
+                  <button className="btn-ghost" onClick={adicionarItemCarrinho} disabled={!produtoParaAdicionar}>
+                    Adicionar
+                  </button>
+                </div>
+
+                {carrinhoIa.itens.length > 0 && (
+                  <div className="order-total">
+                    <span>Subtotal</span>
+                    <span className="mono">{currency.format(carrinhoIa.subtotal)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="carrinho-field">
+                <label>Tipo de entrega</label>
+                <select
+                  value={carrinhoIa.tipo_entrega ?? ""}
+                  onChange={(e) => definirTipoEntregaCarrinho(e.target.value as TipoEntrega | "")}
+                >
+                  <option value="">Não definido</option>
+                  <option value="entrega">Entrega</option>
+                  <option value="retirada">Retirada no local</option>
+                </select>
+              </div>
+
+              {carrinhoIa.tipo_entrega === "entrega" && (
+                <div className="carrinho-endereco">
+                  <div className="carrinho-field-row">
+                    <input
+                      placeholder="Rua"
+                      value={enderecoForm.rua}
+                      onChange={(e) => setEnderecoForm((f) => ({ ...f, rua: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Número"
+                      value={enderecoForm.numero}
+                      onChange={(e) => setEnderecoForm((f) => ({ ...f, numero: e.target.value }))}
+                    />
+                  </div>
+                  <div className="carrinho-field-row">
+                    <input
+                      placeholder="Bairro"
+                      value={enderecoForm.bairro}
+                      onChange={(e) => setEnderecoForm((f) => ({ ...f, bairro: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Cidade"
+                      value={enderecoForm.cidade}
+                      onChange={(e) => setEnderecoForm((f) => ({ ...f, cidade: e.target.value }))}
+                    />
+                  </div>
+                  <button className="btn-ghost" style={{ width: "100%" }} onClick={salvarEnderecoCarrinho}>
+                    Salvar endereço
+                  </button>
+                </div>
+              )}
+
+              <div className="carrinho-field">
+                <label>Forma de pagamento</label>
+                <select
+                  value={carrinhoIa.forma_pagamento ?? ""}
+                  onChange={(e) => definirPagamentoCarrinho(e.target.value as FormaPagamento | "")}
+                >
+                  <option value="">Não definido</option>
+                  <option value="pix">Pix</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="cartao_credito">Cartão de crédito</option>
+                  <option value="cartao_debito">Cartão de débito</option>
+                  <option value="outro">Outro</option>
+                </select>
+              </div>
+
+              {carrinhoIa.pendencias.length > 0 && (
+                <div className="carrinho-pendencias">
+                  <div className="ctx-sublabel">Falta pro pedido fechar</div>
+                  <div className="tags-row">
+                    {carrinhoIa.pendencias.map((p) => (
+                      <div className="tag-pill tag-pill-pendencia" key={p}>
+                        {PENDENCIA_LABEL[p]}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="carrinho-hint">
+                Editável por você e pela IA no mesmo estado — vira pedido só quando confirmado.
+              </div>
+            </Secao>
+          )}
+
+          <Secao
+            titulo="Pedido"
+            aberta={secoesAbertas.pedido ?? true}
+            onToggle={() => alternarSecao("pedido")}
+          >
             {pedido ? (
               <div className="order-card">
                 {pedido.itens.map((item) => {
@@ -609,10 +926,13 @@ export default function Atendimento() {
                 + Novo pedido
               </button>
             )}
-          </div>
+          </Secao>
 
-          <div className="ctx-section">
-            <div className="ctx-label">Cliente</div>
+          <Secao
+            titulo="Cliente"
+            aberta={secoesAbertas.cliente ?? true}
+            onToggle={() => alternarSecao("cliente")}
+          >
             <div className="cust-name">
               {atendimento.cliente.nome ?? "Sem nome"}
             </div>
@@ -637,14 +957,17 @@ export default function Atendimento() {
                 ))}
               </div>
             )}
-          </div>
+          </Secao>
 
-          <div className="ctx-section">
-            <div className="ctx-label">Intenção detectada</div>
+          <Secao
+            titulo="Intenção detectada"
+            aberta={secoesAbertas.intencao ?? true}
+            onToggle={() => alternarSecao("intencao")}
+          >
             <div className="intent-pill" style={{ display: "inline-block" }}>
               {atendimento.intencao ?? "Não identificada"}
             </div>
-          </div>
+          </Secao>
         </div>
       </div>
 

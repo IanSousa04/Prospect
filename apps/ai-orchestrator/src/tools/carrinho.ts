@@ -19,30 +19,16 @@ import { montarItensComSnapshot } from "@prospect/pedidos-core";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { registerTool, type ToolContext } from "./registry.js";
 import { carregarPedidoEmConstrucao, salvarPedidoEmConstrucao } from "../agent/sessao.js";
-import { aplicarMutacaoCarrinho, calcularSubtotal, informacoesPendentes, type ItemCarrinho, type OrderContext } from "../agent/pedido-contexto.js";
+import {
+  aplicarMutacaoCarrinho,
+  encontrarLinhaEquivalente,
+  resumoPedidoIa,
+  type ItemCarrinho,
+} from "../agent/pedido-contexto.js";
+import type { EnderecoEntrega, TipoEntrega } from "@prospect/shared";
 
 interface OpcaoInput {
   opcao_id: string;
-}
-
-/** Resumo devolvido por toda tool de carrinho — o Investigador usa isso
- * como evidência real pra afirmar o estado atual ao Atendente (nunca o
- * LLM "lembrando" o carrinho por conta própria). */
-function resumoCarrinho(pedido: OrderContext) {
-  return {
-    itens: pedido.itens.map((item) => ({
-      linha_id: item.linha_id,
-      produto_id: item.produto_id,
-      nome_produto: item.nome_produto,
-      quantidade: item.quantidade,
-      preco_unitario: item.preco_unitario,
-      observacoes: item.observacoes,
-      opcoes: item.opcoes,
-    })),
-    subtotal: calcularSubtotal(pedido.itens),
-    carrinho_confirmado: pedido.carrinho_confirmado,
-    pendencias: informacoesPendentes(pedido),
-  };
 }
 
 registerTool({
@@ -68,26 +54,39 @@ registerTool({
     input: { produto_id: string; quantidade: number; observacoes?: string | null; opcoes?: OpcaoInput[] },
     ctx: ToolContext,
   ) => {
+    const observacoes = input.observacoes ?? null;
+    const opcoes = input.opcoes ?? [];
+    const pedido = await carregarPedidoEmConstrucao(ctx);
+
+    // Mesmo produto + mesmas opções + mesma observação já no carrinho —
+    // soma na linha existente em vez de duplicar (ver encontrarLinhaEquivalente).
+    const linhaExistente = encontrarLinhaEquivalente(
+      pedido.itens,
+      input.produto_id,
+      observacoes,
+      opcoes.map((o) => o.opcao_id),
+    );
+    const quantidadeFinal = (linhaExistente?.quantidade ?? 0) + input.quantidade;
+
     const montagem = await montarItensComSnapshot(
       supabaseAdmin,
-      [
-        {
-          produto_id: input.produto_id,
-          quantidade: input.quantidade,
-          observacoes: input.observacoes ?? null,
-          opcoes: input.opcoes ?? [],
-        },
-      ],
+      [{ produto_id: input.produto_id, quantidade: quantidadeFinal, observacoes, opcoes }],
       ctx.empresaId,
     );
     if (!montagem.ok) return { erro: montagem.erro };
 
-    const novoItem: ItemCarrinho = { ...montagem.itens[0]!, linha_id: randomUUID() };
-    const pedido = await carregarPedidoEmConstrucao(ctx);
-    const atualizado = aplicarMutacaoCarrinho(pedido, [...pedido.itens, novoItem]);
+    const itemAtualizado: ItemCarrinho = {
+      ...montagem.itens[0]!,
+      linha_id: linhaExistente?.linha_id ?? randomUUID(),
+    };
+    const novosItens = linhaExistente
+      ? pedido.itens.map((item) => (item.linha_id === linhaExistente.linha_id ? itemAtualizado : item))
+      : [...pedido.itens, itemAtualizado];
+
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
     await salvarPedidoEmConstrucao(ctx, atualizado);
 
-    return resumoCarrinho(atualizado);
+    return resumoPedidoIa(atualizado);
   },
 });
 
@@ -110,7 +109,7 @@ registerTool({
     const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
     await salvarPedidoEmConstrucao(ctx, atualizado);
 
-    return resumoCarrinho(atualizado);
+    return resumoPedidoIa(atualizado);
   },
 });
 
@@ -152,7 +151,75 @@ registerTool({
     const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
     await salvarPedidoEmConstrucao(ctx, atualizado);
 
-    return resumoCarrinho(atualizado);
+    return resumoPedidoIa(atualizado);
+  },
+});
+
+registerTool({
+  nome: "definir_tipo_entrega",
+  descricao:
+    "Define se o pedido é para entrega ou retirada no local, depois de perguntar ao cliente — nunca escolha sozinho. Escolher 'retirada' limpa qualquer endereço já salvo neste pedido (não se aplica).",
+  parametrosJsonSchema: {
+    type: "object",
+    properties: { tipo_entrega: { type: "string", enum: ["entrega", "retirada"] } },
+    required: ["tipo_entrega"],
+  },
+  risco: "baixo",
+  executor: async (input: { tipo_entrega: TipoEntrega }, ctx: ToolContext) => {
+    const pedido = await carregarPedidoEmConstrucao(ctx);
+    const atualizado = {
+      ...pedido,
+      tipo_entrega: input.tipo_entrega,
+      endereco: input.tipo_entrega === "retirada" ? null : pedido.endereco,
+      carrinho_confirmado: false,
+    };
+    await salvarPedidoEmConstrucao(ctx, atualizado);
+    return resumoPedidoIa(atualizado);
+  },
+});
+
+registerTool({
+  nome: "definir_endereco_entrega",
+  descricao:
+    "Define o endereço de entrega deste pedido — implica tipo de entrega 'entrega' (nunca chame pra retirada). Sempre chame depois de o cliente confirmar/informar o endereço, nunca antes (se ele já tem endereço salvo em consultar_cliente, confirme reuso primeiro em vez de pedir tudo de novo). Salva como o endereço padrão do cliente pra próxima conversa.",
+  parametrosJsonSchema: {
+    type: "object",
+    properties: {
+      rua: { type: "string" },
+      numero: { type: "string" },
+      complemento: { type: "string" },
+      bairro: { type: "string" },
+      cidade: { type: "string" },
+      referencia: { type: "string" },
+    },
+    required: ["rua", "numero", "bairro", "cidade"],
+  },
+  risco: "baixo",
+  executor: async (input: EnderecoEntrega, ctx: ToolContext) => {
+    const endereco: EnderecoEntrega = {
+      rua: input.rua,
+      numero: input.numero,
+      complemento: input.complemento,
+      bairro: input.bairro,
+      cidade: input.cidade,
+      referencia: input.referencia,
+    };
+
+    const pedido = await carregarPedidoEmConstrucao(ctx);
+    const atualizado = { ...pedido, tipo_entrega: "entrega" as TipoEntrega, endereco, carrinho_confirmado: false };
+    await salvarPedidoEmConstrucao(ctx, atualizado);
+
+    // Salva como endereço padrão do cliente pra reuso na próxima conversa
+    // (tarefa 0020) — não falha a resposta se isso der erro, o pedido atual
+    // já foi salvo com sucesso, que é o que importa agora.
+    const { error: erroCliente } = await supabaseAdmin
+      .from("clientes")
+      .update({ endereco_json: endereco })
+      .eq("id", ctx.clienteId)
+      .eq("empresa_id", ctx.empresaId);
+    if (erroCliente) console.error("[ai-orchestrator] falha ao salvar endereço padrão do cliente:", erroCliente);
+
+    return resumoPedidoIa(atualizado);
   },
 });
 
@@ -163,6 +230,6 @@ registerTool({
   risco: "baixo",
   executor: async (_input: unknown, ctx: ToolContext) => {
     const pedido = await carregarPedidoEmConstrucao(ctx);
-    return resumoCarrinho(pedido);
+    return resumoPedidoIa(pedido);
   },
 });

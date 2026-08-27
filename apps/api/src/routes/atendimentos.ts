@@ -1,5 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import type { AtendimentoComContexto, StatusAtendimento } from "@prospect/shared";
+import type {
+  AtendimentoComContexto,
+  EnderecoEntrega,
+  FormaPagamento,
+  ItemCarrinho,
+  OrderContext,
+  StatusAtendimento,
+  TipoEntrega,
+} from "@prospect/shared";
+import { aplicarMutacaoCarrinho, encontrarLinhaEquivalente, pedidoVazio, resumoPedidoIa } from "@prospect/shared";
+import { montarItensComSnapshot } from "@prospect/pedidos-core";
+import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth } from "../lib/auth.js";
 
@@ -23,6 +34,45 @@ const TRANSICOES: Record<StatusAtendimento, StatusAtendimento[]> = {
   humano_atendendo: ["ia_atendendo", "resolvido"],
   resolvido: [],
 };
+
+/** Lê/grava o Order Context (`ia_sessoes.estado_json.pedido`) — mesmo
+ * estado que a IA usa (`apps/ai-orchestrator/src/agent/sessao.ts`).
+ * Mescla sobre `estado_json` existente (nunca sobrescreve outros campos
+ * que só a IA usa, ex. `ultimo_produto_mencionado`) — mesmo cuidado que
+ * `mesclarEstado` já tem do lado do orquestrador. Um humano editando pela
+ * UI (tarefa 0063) usa exatamente estas duas funções, nunca um pedido
+ * paralelo (CLAUDE.md regra 8). */
+async function carregarPedidoIa(empresaId: string, atendimentoId: string): Promise<OrderContext> {
+  const { data } = await supabaseAdmin
+    .from("ia_sessoes")
+    .select("estado_json")
+    .eq("empresa_id", empresaId)
+    .eq("atendimento_id", atendimentoId)
+    .maybeSingle();
+
+  const pedido = (data?.estado_json as { pedido?: OrderContext } | null)?.pedido;
+  return pedido ?? pedidoVazio();
+}
+
+async function salvarPedidoIa(empresaId: string, atendimentoId: string, pedido: OrderContext): Promise<void> {
+  const { data } = await supabaseAdmin
+    .from("ia_sessoes")
+    .select("estado_json")
+    .eq("empresa_id", empresaId)
+    .eq("atendimento_id", atendimentoId)
+    .maybeSingle();
+
+  const estadoAtual = (data?.estado_json as Record<string, unknown> | null) ?? {};
+
+  await supabaseAdmin.from("ia_sessoes").upsert(
+    {
+      empresa_id: empresaId,
+      atendimento_id: atendimentoId,
+      estado_json: { ...estadoAtual, pedido },
+    },
+    { onConflict: "atendimento_id" },
+  );
+}
 
 function paraContexto(row: any): AtendimentoComContexto {
   return {
@@ -88,6 +138,165 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
 
     return paraContexto(data);
   });
+
+  // Carrinho em construção pela IA (ver ia_sessoes.estado_json.pedido,
+  // apps/ai-orchestrator/src/agent/sessao.ts). Desde a tarefa 0063, também
+  // editável por um humano (rotas abaixo) — mesmo estado que a IA usa,
+  // nunca um pedido paralelo (CLAUDE.md regra 8). GET sempre devolve um
+  // resumo válido (carrinho vazio, não 404) mesmo sem nenhuma sessão criada
+  // ainda, pra UI não precisar tratar caso especial.
+  app.get<{ Params: { id: string } }>("/atendimentos/:id/carrinho", async (request, reply) => {
+    const { empresaId } = request.auth!;
+    const { id } = request.params;
+
+    const pedido = await carregarPedidoIa(empresaId, id);
+    return resumoPedidoIa(pedido);
+  });
+
+  // Adicionar item ao carrinho — mesma validação de preço/disponibilidade
+  // real que a tool `adicionar_ao_carrinho` da IA usa (montarItensComSnapshot,
+  // CLAUDE.md regra 1), e a mesma mesclagem de linha equivalente pra nunca
+  // duplicar (ver tarefa 0054, episódio real do loop de duplicação).
+  app.post<{
+    Params: { id: string };
+    Body: { produto_id: string; quantidade: number; observacoes?: string | null; opcoes?: Array<{ opcao_id: string }> };
+  }>("/atendimentos/:id/carrinho/itens", async (request, reply) => {
+    const { empresaId } = request.auth!;
+    const { id } = request.params;
+    const { produto_id, quantidade, opcoes } = request.body;
+    const observacoes = request.body.observacoes ?? null;
+    const opcoesInput = opcoes ?? [];
+
+    if (!produto_id || !quantidade || quantidade < 1) {
+      return reply.code(400).send({ error: "produto_e_quantidade_obrigatorios" });
+    }
+
+    const pedido = await carregarPedidoIa(empresaId, id);
+    const linhaExistente = encontrarLinhaEquivalente(
+      pedido.itens,
+      produto_id,
+      observacoes,
+      opcoesInput.map((o) => o.opcao_id),
+    );
+    const quantidadeFinal = (linhaExistente?.quantidade ?? 0) + quantidade;
+
+    const montagem = await montarItensComSnapshot(
+      supabaseAdmin,
+      [{ produto_id, quantidade: quantidadeFinal, observacoes, opcoes: opcoesInput }],
+      empresaId,
+    );
+    if (!montagem.ok) return reply.code(400).send({ error: montagem.erro });
+
+    const itemAtualizado: ItemCarrinho = { ...montagem.itens[0]!, linha_id: linhaExistente?.linha_id ?? randomUUID() };
+    const novosItens = linhaExistente
+      ? pedido.itens.map((item) => (item.linha_id === linhaExistente.linha_id ? itemAtualizado : item))
+      : [...pedido.itens, itemAtualizado];
+
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+    await salvarPedidoIa(empresaId, id, atualizado);
+    return resumoPedidoIa(atualizado);
+  });
+
+  // Atualizar quantidade/observação de uma linha já existente — revalida
+  // preço/disponibilidade de novo (não é só editar um número).
+  app.patch<{
+    Params: { id: string; linhaId: string };
+    Body: { quantidade?: number; observacoes?: string | null };
+  }>("/atendimentos/:id/carrinho/itens/:linhaId", async (request, reply) => {
+    const { empresaId } = request.auth!;
+    const { id, linhaId } = request.params;
+
+    const pedido = await carregarPedidoIa(empresaId, id);
+    const itemAtual = pedido.itens.find((item) => item.linha_id === linhaId);
+    if (!itemAtual) return reply.code(404).send({ error: "linha_nao_encontrada" });
+
+    const montagem = await montarItensComSnapshot(
+      supabaseAdmin,
+      [
+        {
+          produto_id: itemAtual.produto_id,
+          quantidade: request.body.quantidade ?? itemAtual.quantidade,
+          observacoes: request.body.observacoes !== undefined ? request.body.observacoes : itemAtual.observacoes,
+          opcoes: itemAtual.opcoes.map((o) => ({ opcao_id: o.opcao_id })),
+        },
+      ],
+      empresaId,
+    );
+    if (!montagem.ok) return reply.code(400).send({ error: montagem.erro });
+
+    const itemAtualizado: ItemCarrinho = { ...montagem.itens[0]!, linha_id: linhaId };
+    const novosItens = pedido.itens.map((item) => (item.linha_id === linhaId ? itemAtualizado : item));
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+    await salvarPedidoIa(empresaId, id, atualizado);
+    return resumoPedidoIa(atualizado);
+  });
+
+  // Remover uma linha do carrinho.
+  app.delete<{ Params: { id: string; linhaId: string } }>(
+    "/atendimentos/:id/carrinho/itens/:linhaId",
+    async (request, reply) => {
+      const { empresaId } = request.auth!;
+      const { id, linhaId } = request.params;
+
+      const pedido = await carregarPedidoIa(empresaId, id);
+      if (!pedido.itens.some((item) => item.linha_id === linhaId)) {
+        return reply.code(404).send({ error: "linha_nao_encontrada" });
+      }
+
+      const novosItens = pedido.itens.filter((item) => item.linha_id !== linhaId);
+      const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+      await salvarPedidoIa(empresaId, id, atualizado);
+      return resumoPedidoIa(atualizado);
+    },
+  );
+
+  // Definir tipo de entrega + endereço — mesmos campos que a IA vai
+  // preencher via conversa (tarefas 0018/0020), mesmo estado.
+  app.put<{
+    Params: { id: string };
+    Body: { tipo_entrega: TipoEntrega | null; endereco: EnderecoEntrega | null };
+  }>("/atendimentos/:id/carrinho/entrega", async (request, reply) => {
+    const { empresaId } = request.auth!;
+    const { id } = request.params;
+    const { tipo_entrega, endereco } = request.body;
+
+    if (tipo_entrega && !["entrega", "retirada"].includes(tipo_entrega)) {
+      return reply.code(400).send({ error: "tipo_entrega_invalido" });
+    }
+
+    const pedido = await carregarPedidoIa(empresaId, id);
+    // Mudar entrega/endereço também é uma mutação real do pedido — mesma
+    // regra 6 do CLAUDE.md de nunca herdar confirmação de um estado que já
+    // mudou (ver aplicarMutacaoCarrinho, mesmo espírito aplicado aqui).
+    const atualizado = {
+      ...pedido,
+      tipo_entrega,
+      endereco: tipo_entrega === "retirada" ? null : endereco,
+      carrinho_confirmado: false,
+    };
+    await salvarPedidoIa(empresaId, id, atualizado);
+    return resumoPedidoIa(atualizado);
+  });
+
+  // Definir forma de pagamento.
+  app.put<{ Params: { id: string }; Body: { forma_pagamento: FormaPagamento | null } }>(
+    "/atendimentos/:id/carrinho/pagamento",
+    async (request, reply) => {
+      const { empresaId } = request.auth!;
+      const { id } = request.params;
+      const { forma_pagamento } = request.body;
+
+      const FORMAS_VALIDAS: FormaPagamento[] = ["dinheiro", "cartao_credito", "cartao_debito", "pix", "outro"];
+      if (forma_pagamento && !FORMAS_VALIDAS.includes(forma_pagamento)) {
+        return reply.code(400).send({ error: "forma_pagamento_invalida" });
+      }
+
+      const pedido = await carregarPedidoIa(empresaId, id);
+      const atualizado = { ...pedido, forma_pagamento, carrinho_confirmado: false };
+      await salvarPedidoIa(empresaId, id, atualizado);
+      return resumoPedidoIa(atualizado);
+    },
+  );
 
   // Assumir atendimento — ação de 1 clique do Kanban/tela de conversa.
   // Regra: só move status pra humano_atendendo se ainda não estava resolvido.

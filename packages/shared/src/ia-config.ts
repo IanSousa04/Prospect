@@ -13,8 +13,9 @@ import { z } from "zod";
  * sem acento (mesma convenção do resto do domínio de negócio no código).
  * Espelha exatamente o check constraint de `ia_permissoes.ferramenta`
  * (supabase/migrations/0010_ia_permissoes.sql, reescrito por migrations
- * posteriores conforme novas ferramentas entram — ver 0013_carrinho_ferramentas.sql)
- * — mudar aqui sem migrar o banco quebra a validação. */
+ * posteriores conforme novas ferramentas entram — ver 0013_carrinho_ferramentas.sql,
+ * 0014_definir_tipo_entrega.sql, 0015_endereco_cliente.sql) — mudar aqui sem
+ * migrar o banco quebra a validação. */
 export const NOMES_FERRAMENTAS = [
   // catálogo
   "buscar_produtos",
@@ -38,6 +39,8 @@ export const NOMES_FERRAMENTAS = [
   "remover_do_carrinho",
   "atualizar_item_carrinho",
   "consultar_carrinho",
+  "definir_tipo_entrega",
+  "definir_endereco_entrega",
   // operação
   "consultar_horario",
   "consultar_taxa",

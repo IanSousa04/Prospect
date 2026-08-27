@@ -103,6 +103,35 @@ function nomesReaisDeProduto(evidencias: EvidenciaColetada[]): Set<string> {
 
 const REGEX_NEGRITO = /\*([^*\n]+)\*/g;
 
+/** Palavras de ênfase comuns que nunca são nome de produto, mesmo em
+ * negrito — episódio real: com o carrinho em uso, `nomesConhecidos` deixou
+ * de ficar vazio na maioria das conversas (toda tool de carrinho retorna
+ * nome de item real), então a rede de segurança de `nomesConhecidos.size
+ * === 0` (só protege contra negrito de ênfase quando NENHUM produto foi
+ * consultado) parou de cobrir o caso comum: o Atendente escreveu "*Total*"
+ * (ou similar) só como ênfase de estilo, isso não bateu com nenhum nome
+ * real do carrinho, e a resposta inteira foi descartada por engano —
+ * alucinação zero, handoff desnecessário. Lista curta e literal (não regex
+ * genérica) pra nunca esconder um nome de produto real que por acaso
+ * coincida com uma dessas palavras. */
+const PALAVRAS_ENFASE_NAO_PRODUTO = new Set([
+  "total",
+  "subtotal",
+  "pedido",
+  "carrinho",
+  "confirmar",
+  "confirmação",
+  "atenção",
+  "importante",
+  "obrigado",
+  "obrigada",
+  "desconto",
+  "promoção",
+  "entrega",
+  "pagamento",
+  "endereço",
+]);
+
 /**
  * Checagem determinística: todo nome de produto que o Atendente escreveu em
  * *negrito* (sintaxe WhatsApp já exigida no prompt pra nome de produto)
@@ -121,7 +150,8 @@ export function contemProdutoNaoVerificado(textoFinal: string, evidencias: Evide
 
   const negritos = [...textoFinal.matchAll(REGEX_NEGRITO)]
     .map((m) => (m[1] ?? "").trim())
-    .filter((texto) => texto.length >= 3 && /[a-zà-ú]/i.test(texto));
+    .filter((texto) => texto.length >= 3 && /[a-zà-ú]/i.test(texto))
+    .filter((texto) => !PALAVRAS_ENFASE_NAO_PRODUTO.has(texto.toLowerCase()));
 
   return negritos.some((negrito) => {
     const normalizado = negrito.toLowerCase();

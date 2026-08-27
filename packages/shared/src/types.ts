@@ -1,6 +1,8 @@
 // Tipos espelham 1:1 o schema de supabase/migrations/0005_fase1_atendimento.sql.
 // Qualquer mudança de schema deve atualizar este arquivo na mesma alteração.
 
+import type { EnderecoEntrega } from "./pedidos.js";
+
 export type Segmento =
   | "hamburgueria"
   | "pizzaria"
@@ -48,6 +50,11 @@ export interface Cliente {
   ultima_interacao_em: string;
   tags: string[];
   preferencias_json: Record<string, unknown>;
+  /** Último endereço de entrega usado (tarefa 0020) — um único campo, não
+   * múltiplos endereços salvos: nenhuma necessidade real de mais de um
+   * ainda apareceu. Usado pra "entregar no mesmo endereço de sempre?" na
+   * próxima conversa, em vez de pedir tudo de novo. */
+  endereco_json: EnderecoEntrega | null;
   criado_em: string;
   atualizado_em: string;
 }

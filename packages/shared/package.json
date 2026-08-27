@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@prospect/pedidos-core": "*",
     "zod": "^3.23.8"
   },
   "devDependencies": {

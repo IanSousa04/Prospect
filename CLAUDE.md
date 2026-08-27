@@ -21,6 +21,7 @@ Estas regras vêm diretamente da especificação de produto e não podem ser con
 5. **Isolamento multi-tenant absoluto.** Toda query, ferramenta de IA e endpoint deve ser escopado por empresa (tenant). Vazamento de dado entre empresas é tratado como incidente de segurança, não como bug comum.
 6. **Ações irreversíveis exigem confiança alta + baixo risco + permissão explícita.** Confiança alta sozinha não basta se o risco ou o impacto financeiro for alto — nesse caso, handoff.
 7. **Custo real de mensageria.** Todo envio automático de mensagem ao WhatsApp de um cliente é uma ação com custo e risco reputacional real — nunca simule "sucesso" sem confirmação da API, e nunca envie mensagens em loop sem rate limiting.
+8. **Todo estado novo que a IA passa a gerenciar precisa ser gerenciável por um humano na UI, sobre o MESMO estado — nunca um estado paralelo.** Exemplo real: o carrinho em construção que a IA monta (`ia_sessoes.estado_json.pedido`) precisa poder ser editado por um atendente humano que assuma a conversa no meio do processo (adicionar/remover item, mudar tipo de entrega, forma de pagamento etc.), vendo e mexendo exatamente no que a IA já tinha montado — nunca obrigando o humano a recomeçar do zero num pedido desconectado. Toda tarefa do ROADMAP que introduz um novo campo/estrutura de estado gerenciado pela IA deve, na mesma tarefa ou numa tarefa companheira explicitamente referenciada, cobrir também o gerenciamento desse estado pela UI.
 
 ## Antes de implementar
 

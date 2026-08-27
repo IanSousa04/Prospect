@@ -19,11 +19,14 @@ import {
   detectarCopiaLiteralDeInjection,
 } from "../agent/sanitizacao-prompt-injection.js";
 import type { EvidenciaColetada } from "../agent/investigador.js";
+import { sintetizarAfirmacaoDeMutacaoCarrinho } from "../agent/investigador.js";
+import type { RelatorioInvestigacao } from "../agent/types.js";
 import {
   pedidoVazio,
   informacoesPendentes,
   calcularSubtotal,
   aplicarMutacaoCarrinho,
+  encontrarLinhaEquivalente,
   type ItemCarrinho,
   type InformacaoPendente,
 } from "../agent/pedido-contexto.js";
@@ -69,6 +72,57 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
     },
   },
   {
+    nome: "episódio real: preço de item confirmado em rodada ANTERIOR não pode ser recitado sem evidência desta rodada",
+    rodar: () => {
+      // Reproduz o handoff real: cliente discutiu X-Bacon (R$ 32,90) em
+      // rodadas passadas, depois pediu só uma Coca-Cola nesta rodada — a
+      // única evidência desta chamada é a Coca (adicionar_ao_carrinho),
+      // nunca o X-Bacon de novo. Um resumo que recita o preço do X-Bacon
+      // usando só o que foi dito antes (histórico) precisa ser bloqueado,
+      // mesmo que o valor já tenha sido real em algum momento da conversa.
+      const evidenciasDestaRodada: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-coca-1",
+          toolNome: "adicionar_ao_carrinho",
+          output: {
+            itens: [
+              { linha_id: "l1", produto_id: "c1", nome_produto: "Coca-Cola 350ml", preco_unitario: 6.9, quantidade: 1, observacoes: null, opcoes: [] },
+            ],
+            subtotal: 6.9,
+            carrinho_confirmado: false,
+            pendencias: ["confirmar_carrinho", "tipo_entrega", "forma_pagamento"],
+          },
+        },
+      ];
+      const resumoComPrecoAntigo = "Adicionei a *Coca-Cola 350ml* (R$ 6,90). Seu pedido: X-Bacon (R$ 32,90) + Coca-Cola (R$ 6,90) = R$ 39,80.";
+      const bloqueado = contemValorNaoVerificado(resumoComPrecoAntigo, evidenciasDestaRodada);
+      return bloqueado === true ? null : "preço do X-Bacon (fora da evidência desta rodada) passou sem ser bloqueado";
+    },
+  },
+  {
+    nome: "mesmo resumo passa quando 'consultar_carrinho' desta rodada já traz TODOS os itens (caminho correto, regra 10 do Investigador)",
+    rodar: () => {
+      const evidenciasComCarrinhoCompleto: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-carrinho-1",
+          toolNome: "consultar_carrinho",
+          output: {
+            itens: [
+              { linha_id: "l0", produto_id: "b1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] },
+              { linha_id: "l1", produto_id: "c1", nome_produto: "Coca-Cola 350ml", preco_unitario: 6.9, quantidade: 1, observacoes: null, opcoes: [] },
+            ],
+            subtotal: 39.8,
+            carrinho_confirmado: false,
+            pendencias: ["confirmar_carrinho", "tipo_entrega", "forma_pagamento"],
+          },
+        },
+      ];
+      const resumo = "Seu pedido: X-Bacon (R$ 32,90) + Coca-Cola (R$ 6,90) = R$ 39,80.";
+      const bloqueado = contemValorNaoVerificado(resumo, evidenciasComCarrinhoCompleto);
+      return bloqueado === false ? null : "resumo com evidência fresca de todos os itens foi bloqueado (falso positivo)";
+    },
+  },
+  {
     nome: "valor monetário inventado (fora da evidência) é bloqueado",
     rodar: () => {
       const bloqueado = contemValorNaoVerificado("O *X-Bacon* custa R$ 99,90.", EVIDENCIAS_CATALOGO);
@@ -87,6 +141,41 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
     rodar: () => {
       const bloqueado = contemProdutoNaoVerificado("Temos o *X-Supremo Especial* disponível!", EVIDENCIAS_CATALOGO);
       return bloqueado === true ? null : "produto inventado passou (falso negativo)";
+    },
+  },
+  {
+    nome: "episódio real: palavra de ênfase comum em negrito ('*Total*') não é confundida com nome de produto inventado",
+    rodar: () => {
+      // Reproduz o handoff real: com o carrinho já tendo itens reais nas
+      // evidências (nomesConhecidos não fica vazio), qualquer outra palavra
+      // em negrito passava a ser tratada como candidata a nome de produto —
+      // "Seu *Total* é R$ 54,70" foi bloqueado por engano, mesmo os 3
+      // produtos citados sendo todos reais.
+      const evidenciasCarrinho: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-carrinho-1",
+          toolNome: "consultar_carrinho",
+          output: {
+            itens: [
+              { nome_produto: "X-Bacon" },
+              { nome_produto: "Coca-Cola 350ml" },
+              { nome_produto: "Batata Frita" },
+            ],
+          },
+        },
+      ];
+      const bloqueado = contemProdutoNaoVerificado("Seu *Total* é R$ 54,70. Pode fechar?", evidenciasCarrinho);
+      return bloqueado === false ? null : "'*Total*' foi tratado como produto inventado (falso positivo)";
+    },
+  },
+  {
+    nome: "palavra de ênfase comum NÃO cria brecha pra esconder um produto de verdade inventado",
+    rodar: () => {
+      const evidenciasCarrinho: EvidenciaColetada[] = [
+        { execucaoId: "eval-carrinho-2", toolNome: "consultar_carrinho", output: { itens: [{ nome_produto: "X-Bacon" }] } },
+      ];
+      const bloqueado = contemProdutoNaoVerificado("Seu *Total* é R$ 54,70, incluindo o *Milkshake Especial*.", evidenciasCarrinho);
+      return bloqueado === true ? null : "produto inventado ('Milkshake Especial') passou junto com a palavra de ênfase (falso negativo)";
     },
   },
   {
@@ -447,6 +536,214 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
       return depoisDeAdicionar.carrinho_confirmado === false
         ? null
         : "carrinho continuou marcado como confirmado depois de uma mutação — cliente poderia confirmar sem ver o item novo";
+    },
+  },
+  {
+    nome: "episódio real: adicionar o mesmo produto (mesmas opções, mesma observação) de novo deve mesclar, nunca duplicar linha",
+    rodar: () => {
+      // Reproduz o bug real: IA chamou adicionar_ao_carrinho pro X-Bacon,
+      // depois chamou de novo (mesma customização) numa rodada seguinte —
+      // sem essa checagem, o carrinho ficava com 2 linhas do mesmo item
+      // em vez de uma linha com quantidade 2.
+      const existente: ItemCarrinho = {
+        produto_id: "x-bacon",
+        linha_id: "l1",
+        nome_produto: "X-Bacon",
+        preco_unitario: 32.9,
+        quantidade: 1,
+        observacoes: null,
+        opcoes: [],
+      };
+      const encontrada = encontrarLinhaEquivalente([existente], "x-bacon", null, []);
+      if (encontrada?.linha_id !== "l1") return `esperado encontrar a linha l1, obtido ${JSON.stringify(encontrada)}`;
+      return null;
+    },
+  },
+  {
+    nome: "encontrarLinhaEquivalente NÃO mescla quando as opções escolhidas são diferentes (personalização distinta é uma linha própria)",
+    rodar: () => {
+      const semExtra: ItemCarrinho = {
+        produto_id: "x-bacon",
+        linha_id: "l1",
+        nome_produto: "X-Bacon",
+        preco_unitario: 32.9,
+        quantidade: 1,
+        observacoes: null,
+        opcoes: [],
+      };
+      const comBaconExtra: ItemCarrinho = {
+        ...semExtra,
+        linha_id: "l2",
+        opcoes: [{ opcao_id: "bacon-extra", nome_opcao: "Bacon extra", preco_adicional: 5 }],
+      };
+      const encontrada = encontrarLinhaEquivalente([semExtra, comBaconExtra], "x-bacon", null, ["bacon-extra"]);
+      return encontrada?.linha_id === "l2" ? null : `esperado achar a linha l2 (com bacon extra), obtido ${JSON.stringify(encontrada)}`;
+    },
+  },
+  {
+    nome: "encontrarLinhaEquivalente NÃO mescla quando a observação é diferente (ex.: 'sem cebola' é um pedido distinto)",
+    rodar: () => {
+      const semObs: ItemCarrinho = {
+        produto_id: "x-bacon",
+        linha_id: "l1",
+        nome_produto: "X-Bacon",
+        preco_unitario: 32.9,
+        quantidade: 1,
+        observacoes: null,
+        opcoes: [],
+      };
+      const encontrada = encontrarLinhaEquivalente([semObs], "x-bacon", "sem cebola", []);
+      return encontrada === null ? null : `não deveria mesclar com observação diferente, obtido ${JSON.stringify(encontrada)}`;
+    },
+  },
+  {
+    nome: "episódio real: 'Sim' ambíguo depois de uma mutação de carrinho real vira afirmação do estado real, nunca repete a pergunta em loop",
+    rodar: () => {
+      // Reproduz o loop real: cliente respondeu "Sim" pra "quer adicionar a
+      // Coca?", a IA chamou adicionar_ao_carrinho de verdade (mutação real,
+      // sucesso), mas o relatório do LLM marcou ambiguidade e devolveu zero
+      // afirmações — sem essa rede de segurança, o Atendente repetia a
+      // MESMA pergunta de confirmação pro cliente indefinidamente, enquanto
+      // cada "Sim" incrementava a quantidade em silêncio.
+      const relatorioAmbiguoSemAfirmacoes: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: {
+          tipo: "informacao_insuficiente",
+          opcoes: ["O cliente respondeu 'Sim' sem contexto claro sobre o que está confirmando."],
+        },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-mutacao-1",
+          toolNome: "adicionar_ao_carrinho",
+          output: {
+            itens: [{ linha_id: "l1", produto_id: "c1", nome_produto: "Coca-Cola 350ml", preco_unitario: 6.9, quantidade: 2, observacoes: null, opcoes: [] }],
+            subtotal: 13.8,
+            carrinho_confirmado: false,
+            pendencias: ["confirmar_carrinho", "tipo_entrega", "forma_pagamento"],
+          },
+        },
+      ];
+
+      const resultado = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioAmbiguoSemAfirmacoes, evidencias);
+      if (resultado.ambiguidade.tipo !== "nenhuma") return "ambiguidade não foi limpa — o Atendente ainda repetiria a pergunta";
+      if (resultado.afirmacoes.length !== 1) return `esperado 1 afirmação sintética, obtido ${resultado.afirmacoes.length}`;
+      const afirmacao = resultado.afirmacoes[0]!;
+      if (afirmacao.fonte_tool_execucao_id !== "eval-mutacao-1") return "afirmação sintética não citou a execução real como fonte";
+      if (!afirmacao.texto.includes("Coca-Cola") || !afirmacao.texto.includes("13,80")) {
+        return `texto da afirmação não reflete o estado real do carrinho: "${afirmacao.texto}"`;
+      }
+      return null;
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDeMutacaoCarrinho também protege contra loop em 'definir_tipo_entrega' (tarefa 0018)",
+    rodar: () => {
+      const relatorioAmbiguo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-entrega-1",
+          toolNome: "definir_tipo_entrega",
+          output: {
+            itens: [{ linha_id: "l1", produto_id: "p1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] }],
+            subtotal: 32.9,
+            tipo_entrega: "retirada",
+            carrinho_confirmado: false,
+            pendencias: ["confirmar_carrinho", "forma_pagamento"],
+          },
+        },
+      ];
+      const resultado = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioAmbiguo, evidencias);
+      return resultado.ambiguidade.tipo === "nenhuma" && resultado.afirmacoes.length === 1
+        ? null
+        : "não sintetizou afirmação real pra 'definir_tipo_entrega' — o Atendente repetiria a pergunta em loop";
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDeMutacaoCarrinho também protege contra loop em 'definir_endereco_entrega' (tarefa 0020)",
+    rodar: () => {
+      const relatorioAmbiguo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-endereco-1",
+          toolNome: "definir_endereco_entrega",
+          output: {
+            itens: [{ linha_id: "l1", produto_id: "p1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] }],
+            subtotal: 32.9,
+            tipo_entrega: "entrega",
+            endereco: { rua: "Rua A", numero: "10", bairro: "Centro", cidade: "SP" },
+            carrinho_confirmado: false,
+            pendencias: ["confirmar_carrinho", "forma_pagamento"],
+          },
+        },
+      ];
+      const resultado = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioAmbiguo, evidencias);
+      return resultado.ambiguidade.tipo === "nenhuma" && resultado.afirmacoes.length === 1
+        ? null
+        : "não sintetizou afirmação real pra 'definir_endereco_entrega' — o Atendente repetiria a pergunta em loop";
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDeMutacaoCarrinho não mexe no relatório quando já existem afirmações reais",
+    rodar: () => {
+      const relatorioComAfirmacao: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [{ texto: "X", tipo: "generico", fonte_tool: "buscar_produtos", fonte_tool_execucao_id: "x1" }],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "eval-mutacao-2", toolNome: "adicionar_ao_carrinho", output: { itens: [], subtotal: 0, carrinho_confirmado: false, pendencias: ["produtos"] } },
+      ];
+      const resultado = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioComAfirmacao, evidencias);
+      return resultado === relatorioComAfirmacao ? null : "alterou um relatório que já tinha afirmação real (não deveria mexer)";
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDeMutacaoCarrinho não inventa nada quando não houve mutação de carrinho nesta rodada",
+    rodar: () => {
+      const relatorioAmbiguo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "eval-consulta-1", toolNome: "consultar_carrinho", output: { itens: [], subtotal: 0, carrinho_confirmado: false, pendencias: ["produtos"] } },
+      ];
+      const resultado = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioAmbiguo, evidencias);
+      return resultado === relatorioAmbiguo ? null : "mexeu no relatório mesmo sem nenhuma mutação real de carrinho (só consulta)";
+    },
+  },
+  {
+    nome: "encontrarLinhaEquivalente ignora a ORDEM das opções (mesmo conjunto, ordem diferente ainda é a mesma linha)",
+    rodar: () => {
+      const item: ItemCarrinho = {
+        produto_id: "x-bacon",
+        linha_id: "l1",
+        nome_produto: "X-Bacon",
+        preco_unitario: 32.9,
+        quantidade: 1,
+        observacoes: null,
+        opcoes: [
+          { opcao_id: "bacon-extra", nome_opcao: "Bacon extra", preco_adicional: 5 },
+          { opcao_id: "queijo-extra", nome_opcao: "Queijo extra", preco_adicional: 4 },
+        ],
+      };
+      const encontrada = encontrarLinhaEquivalente([item], "x-bacon", null, ["queijo-extra", "bacon-extra"]);
+      return encontrada?.linha_id === "l1" ? null : "não reconheceu o mesmo conjunto de opções em ordem diferente";
     },
   },
 ];

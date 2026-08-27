@@ -24,6 +24,13 @@
   --primary: oklch(0.56 0.15 45);
   --primary-hover: oklch(0.5 0.15 45);
 
+  /* Verde de ação positiva/conclusão (ex.: "Finalizar atendimento") — cor de
+     BOTÃO, não de status: não faz parte do mapeamento semântico de status
+     abaixo (ia/amber/red/blue/gray), então não conflita com aquela regra
+     permanente. Mesmo papel que --primary já tem pra ações de destaque. */
+  --success: oklch(0.5 0.13 150);
+  --success-hover: oklch(0.44 0.13 150);
+
   /* Cores de status — mesmas famílias de matiz de antes (292 violeta, 70
      âmbar, 25 vermelho, 250 azul, 260 neutro), invertidas pra fundo claro:
      texto mais escuro/saturado, fundo bem claro. Mapeamento semântico

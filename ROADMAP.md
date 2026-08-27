@@ -85,14 +85,17 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 
 Reorganizada em 2026-08-27 por ordem de dependência lógica dentro de cada prioridade (não só por número); os 3 épicos de 13 SP (`criar_pedido`, tools de escrita restantes, migração do WhatsApp) foram quebrados em subtarefas menores — os itens originais continuam em `tasks/` como referência de desenho/contexto, mas saem da lista marcável abaixo (ver nota "Desmembrada em" em cada um).
 
+**CLAUDE.md regra 8** (adicionada 2026-08-27): todo item nesta seção que introduz um novo campo/estrutura de estado gerenciado pela IA precisa de uma contraparte de gerenciamento humano na UI, sobre o MESMO estado — nunca um estado paralelo. Ver a tarefa [0063](tasks/0063-gerenciar_carrinho_ia_ui.md) (UI do carrinho/Order Context) e as notas cruzadas já deixadas em 0018/0019/0020/0055/0057/0058/0059.
+
 ### 3.1 Fechar o ciclo comercial da IA (realizar pedido) — P1
 
 Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** uma venda. Ordem de dependência: Order Context → tools de carrinho → confirmação/criação é o caminho mínimo pra IA fechar uma venda de ponta a ponta; tipo de entrega, endereço e forma de pagamento entram entre o carrinho e a confirmação; o motor genérico de etapas é stretch opcional, só depois do resto validado em produção.
 
 - [x] **[P1] Order Context — estado estruturado do pedido em construção.** `SP: 5` ([detalhes](tasks/0053-order_context.md))
 - [x] **[P1] Tools de carrinho (`add_to_cart`, `remove_from_cart`, `update_cart_item`, `get_cart`, `calculate_cart`).** `SP: 5` ([detalhes](tasks/0054-tools_carrinho.md))
-- [ ] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** `SP: 3` ([detalhes](tasks/0018-tipo_entrega.md))
-- [ ] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
+- [x] **[P1] Gerenciar o carrinho da IA (Order Context) direto da UI — humano edita o mesmo estado.** `SP: 8` ([detalhes](tasks/0063-gerenciar_carrinho_ia_ui.md))
+- [x] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** `SP: 3` ([detalhes](tasks/0018-tipo_entrega.md))
+- [x] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
 - [ ] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
 - [ ] **[P1] Confirmação explícita do pedido + criação real em `pedidos`/`itens_pedido`.** `SP: 3` ([detalhes](tasks/0055-confirmacao_criacao_pedido.md))
 - [ ] **[P2] Motor genérico de etapas configurável por empresa (stretch, além do escopo mínimo acima).** `SP: 5` ([detalhes](tasks/0056-motor_generico_etapas.md))
