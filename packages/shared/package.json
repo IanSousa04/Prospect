@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@prospect/pedidos-core": "*",
+    "@supabase/supabase-js": "^2.45.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {

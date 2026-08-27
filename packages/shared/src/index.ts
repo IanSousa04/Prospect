@@ -7,3 +7,4 @@ export * from "./ia-permissoes.js";
 export * from "./handoffs-schema.js";
 export * from "./modo-teste.js";
 export * from "./pedido-ia.js";
+export * from "./pedido-criacao.js";

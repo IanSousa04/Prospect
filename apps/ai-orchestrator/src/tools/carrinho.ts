@@ -25,7 +25,7 @@ import {
   resumoPedidoIa,
   type ItemCarrinho,
 } from "../agent/pedido-contexto.js";
-import type { EnderecoEntrega, TipoEntrega } from "@prospect/shared";
+import type { EnderecoEntrega, FormaPagamento, TipoEntrega } from "@prospect/shared";
 
 interface OpcaoInput {
   opcao_id: string;
@@ -219,6 +219,26 @@ registerTool({
       .eq("empresa_id", ctx.empresaId);
     if (erroCliente) console.error("[ai-orchestrator] falha ao salvar endereço padrão do cliente:", erroCliente);
 
+    return resumoPedidoIa(atualizado);
+  },
+});
+
+registerTool({
+  nome: "definir_forma_pagamento",
+  descricao:
+    "Registra a forma de pagamento escolhida pelo cliente pra este pedido — pergunte antes de chamar, nunca escolha sozinho. Não existe cobrança real ainda, é só registrar a escolha.",
+  parametrosJsonSchema: {
+    type: "object",
+    properties: {
+      forma_pagamento: { type: "string", enum: ["dinheiro", "cartao_credito", "cartao_debito", "pix", "outro"] },
+    },
+    required: ["forma_pagamento"],
+  },
+  risco: "baixo",
+  executor: async (input: { forma_pagamento: FormaPagamento }, ctx: ToolContext) => {
+    const pedido = await carregarPedidoEmConstrucao(ctx);
+    const atualizado = { ...pedido, forma_pagamento: input.forma_pagamento, carrinho_confirmado: false };
+    await salvarPedidoEmConstrucao(ctx, atualizado);
     return resumoPedidoIa(atualizado);
   },
 });

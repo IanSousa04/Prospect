@@ -20,6 +20,7 @@ const GRUPOS: Array<{ titulo: string; ferramentas: NomeFerramenta[] }> = [
       "consultar_carrinho",
       "definir_tipo_entrega",
       "definir_endereco_entrega",
+      "definir_forma_pagamento",
     ],
   },
   {
@@ -45,8 +46,9 @@ const DESCRICOES: Partial<Record<NomeFerramenta, string>> = {
   consultar_carrinho: "Ver o carrinho atual (itens, subtotal, o que falta pra fechar o pedido).",
   definir_tipo_entrega: "Registrar se o pedido é entrega ou retirada, depois de perguntar ao cliente.",
   definir_endereco_entrega: "Registrar o endereço de entrega do pedido (e salvar como padrão do cliente pra próxima vez).",
+  definir_forma_pagamento: "Registrar a forma de pagamento escolhida pelo cliente (sem cobrança real ainda).",
   consultar_pedido: "Ver detalhes do pedido da conversa atual.",
-  criar_pedido: "Ainda não implementada — reservada para o MVP 2.",
+  criar_pedido: "Confirma e cria de verdade o pedido, a partir do carrinho que a IA montou — ação irreversível com impacto financeiro real.",
   adicionar_item: "Ainda não implementada — reservada para o MVP 2.",
   alterar_item: "Ainda não implementada — reservada para o MVP 2.",
   cancelar_pedido: "Ainda não implementada — reservada para o MVP 2.",
@@ -197,6 +199,25 @@ export default function ConfiguracoesIa() {
     }
   }
 
+  async function alternarExigeConfirmacaoHumana(nome: NomeFerramenta) {
+    const atual = porFerramenta(nome);
+    const novoValor = !(atual?.exige_confirmacao_humana ?? false);
+    setPermissoes((lista) =>
+      lista.map((p) => (p.ferramenta === nome ? { ...p, exige_confirmacao_humana: novoValor } : p)),
+    );
+    setSalvando(nome);
+    try {
+      await api.salvarIaPermissao({
+        ferramenta: nome,
+        permitido: atual?.permitido ?? false,
+        exige_confirmacao_humana: novoValor,
+        valor_maximo_sem_handoff: atual?.valor_maximo_sem_handoff ?? null,
+      });
+    } finally {
+      setSalvando(null);
+    }
+  }
+
   if (carregando || !config) {
     return <div className="empty-state">Carregando…</div>;
   }
@@ -327,8 +348,16 @@ export default function ConfiguracoesIa() {
                     </div>
                     {nome === "criar_pedido" && ligado && (
                       <div className="extra-fields">
+                        <label className="extra-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={permissao?.exige_confirmacao_humana ?? false}
+                            onChange={() => alternarExigeConfirmacaoHumana(nome)}
+                          />
+                          Sempre exigir confirmação humana antes de criar (nunca cria sozinha)
+                        </label>
                         <label className="extra-field">
-                          Valor máximo sem handoff
+                          Valor máximo sem handoff (acima disso, sempre pede confirmação humana)
                           <input
                             type="number"
                             step="0.01"

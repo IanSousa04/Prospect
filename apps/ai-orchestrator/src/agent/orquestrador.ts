@@ -188,6 +188,43 @@ export async function processarMensagem(
   // perder o resultado de rodadas onde a IA acaba fazendo handoff.
   await atualizarSessaoComEvidencias(ctx, evidencias);
 
+  // Veto determinístico, ANTES de qualquer decisão (mesmo espírito do guard
+  // de prompt injection abaixo): se a tool "criar_pedido" (tarefa 0055)
+  // recusou criar o pedido por exigência da própria empresa configurada em
+  // `ia_permissoes` (exige_confirmacao_humana ou valor acima do limite sem
+  // handoff, CLAUDE.md regra 6), isso é definitivo — nunca deixa o resto da
+  // pipeline (LLM decidindo relatório/resposta) tentar "resolver" ou
+  // insistir. Handoff sempre, sem depender do modelo perceber isso sozinho.
+  const bloqueioCriarPedido = evidencias.find(
+    (e) =>
+      e.toolNome === "criar_pedido" &&
+      e.output &&
+      typeof e.output === "object" &&
+      (e.output as Record<string, unknown>).erro === "confirmacao_humana_necessaria",
+  );
+  if (bloqueioCriarPedido) {
+    const detalhe = bloqueioCriarPedido.output as { motivo: string; total: number };
+    const relatorioVazio: RelatorioInvestigacao = {
+      sem_investigacao: false,
+      afirmacoes: [],
+      ambiguidade: { tipo: "nenhuma" },
+      ferramentasChamadas: relatorio.ferramentasChamadas,
+    };
+    await registrarDecisao({ ctx, confianca: "alta", cobertura: 0, acao: "handoff", relatorio: relatorioVazio });
+    await criarHandoff(ctx.empresaId, {
+      atendimento_id: ctx.atendimentoId,
+      origem: "alto_risco",
+      motivo:
+        detalhe.motivo === "empresa_exige_confirmacao_humana"
+          ? "Empresa configurou que criação de pedido pela IA sempre exige confirmação humana"
+          : `Total do pedido (R$ ${detalhe.total.toFixed(2)}) acima do limite configurado pra criação automática sem handoff`,
+      resumo: `Cliente confirmou um pedido em construção, mas a criação automática foi bloqueada pela configuração de risco da empresa (CLAUDE.md regra 6 — ação irreversível com impacto financeiro).`,
+      acao_sugerida: "Revisar o carrinho no painel e criar o pedido manualmente, ou aprovar com o cliente antes.",
+      prioridade: "alta",
+    });
+    return { acao: "handoff", respostaTexto: null, confianca: "alta" };
+  }
+
   // Guard contra prompt injection via conhecimento/ferramentas (ROADMAP.md §1,
   // tarefa 0010): checagem determinística ANTES de qualquer decisão. Se
   // alguma evidência contém padrão de injection E o relatório do Investigador

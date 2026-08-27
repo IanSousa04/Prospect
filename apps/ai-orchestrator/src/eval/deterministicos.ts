@@ -19,7 +19,8 @@ import {
   detectarCopiaLiteralDeInjection,
 } from "../agent/sanitizacao-prompt-injection.js";
 import type { EvidenciaColetada } from "../agent/investigador.js";
-import { sintetizarAfirmacaoDeMutacaoCarrinho } from "../agent/investigador.js";
+import { sintetizarAfirmacaoDeMutacaoCarrinho, sintetizarAfirmacaoDePedidoCriado } from "../agent/investigador.js";
+import { avaliarRiscoCriarPedido } from "@prospect/shared";
 import type { RelatorioInvestigacao } from "../agent/types.js";
 import {
   pedidoVazio,
@@ -696,6 +697,34 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
     },
   },
   {
+    nome: "sintetizarAfirmacaoDeMutacaoCarrinho também protege contra loop em 'definir_forma_pagamento' (tarefa 0019)",
+    rodar: () => {
+      const relatorioAmbiguo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-pagamento-1",
+          toolNome: "definir_forma_pagamento",
+          output: {
+            itens: [{ linha_id: "l1", produto_id: "p1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] }],
+            subtotal: 32.9,
+            forma_pagamento: "pix",
+            carrinho_confirmado: false,
+            pendencias: ["confirmar_carrinho"],
+          },
+        },
+      ];
+      const resultado = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioAmbiguo, evidencias);
+      return resultado.ambiguidade.tipo === "nenhuma" && resultado.afirmacoes.length === 1
+        ? null
+        : "não sintetizou afirmação real pra 'definir_forma_pagamento' — o Atendente repetiria a pergunta em loop";
+    },
+  },
+  {
     nome: "sintetizarAfirmacaoDeMutacaoCarrinho não mexe no relatório quando já existem afirmações reais",
     rodar: () => {
       const relatorioComAfirmacao: RelatorioInvestigacao = {
@@ -744,6 +773,92 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
       };
       const encontrada = encontrarLinhaEquivalente([item], "x-bacon", null, ["queijo-extra", "bacon-extra"]);
       return encontrada?.linha_id === "l1" ? null : "não reconheceu o mesmo conjunto de opções em ordem diferente";
+    },
+  },
+
+  // ============================================================================
+  // Confirmação + criação real do pedido (tarefa 0055)
+  // ============================================================================
+
+  {
+    nome: "avaliarRiscoCriarPedido: sem configuração nenhuma, é permissivo (não bloqueia)",
+    rodar: () => {
+      const risco = avaliarRiscoCriarPedido(undefined, 100);
+      return risco.bloqueado === false ? null : "bloqueou sem nenhuma configuração da empresa (deveria ser permissivo por padrão)";
+    },
+  },
+  {
+    nome: "avaliarRiscoCriarPedido: exige_confirmacao_humana=true sempre bloqueia, mesmo valor baixo",
+    rodar: () => {
+      const risco = avaliarRiscoCriarPedido({ exige_confirmacao_humana: true, valor_maximo_sem_handoff: null }, 10);
+      return risco.bloqueado === true && risco.motivo === "empresa_exige_confirmacao_humana"
+        ? null
+        : `esperado bloqueado por exigência da empresa, obtido ${JSON.stringify(risco)}`;
+    },
+  },
+  {
+    nome: "avaliarRiscoCriarPedido: total acima do valor_maximo_sem_handoff bloqueia",
+    rodar: () => {
+      const risco = avaliarRiscoCriarPedido({ exige_confirmacao_humana: false, valor_maximo_sem_handoff: 50 }, 51);
+      return risco.bloqueado === true && risco.motivo === "valor_acima_do_limite_sem_handoff"
+        ? null
+        : `esperado bloqueado por valor acima do limite, obtido ${JSON.stringify(risco)}`;
+    },
+  },
+  {
+    nome: "avaliarRiscoCriarPedido: total igual ou abaixo do valor_maximo_sem_handoff NÃO bloqueia",
+    rodar: () => {
+      const risco = avaliarRiscoCriarPedido({ exige_confirmacao_humana: false, valor_maximo_sem_handoff: 50 }, 50);
+      return risco.bloqueado === false ? null : "bloqueou um total igual ao limite configurado (deveria passar, só bloqueia ACIMA)";
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDePedidoCriado: pedido criado durante ambiguidade nunca fica escondido do cliente",
+    rodar: () => {
+      // Pior cenário possível: um pedido real foi criado (dinheiro de
+      // verdade), mas o relatório do LLM marcou ambiguidade e não afirmou
+      // nada — sem essa rede de segurança, o cliente nunca ficaria sabendo
+      // que o pedido foi confirmado.
+      const relatorioAmbiguo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-pedido-criado-1",
+          toolNome: "criar_pedido",
+          output: { pedido_criado: true, pedido_id: "p-123", total: 54.7 },
+        },
+      ];
+      const resultado = sintetizarAfirmacaoDePedidoCriado(relatorioAmbiguo, evidencias);
+      if (resultado.ambiguidade.tipo !== "nenhuma") return "ambiguidade não foi limpa — o pedido criado ficaria escondido do cliente";
+      if (resultado.afirmacoes.length !== 1) return `esperado 1 afirmação, obtido ${resultado.afirmacoes.length}`;
+      const afirmacao = resultado.afirmacoes[0]!;
+      if (afirmacao.fonte_tool_execucao_id !== "eval-pedido-criado-1") return "não citou a execução real como fonte";
+      if (!afirmacao.texto.includes("54,70")) return `texto não reflete o total real: "${afirmacao.texto}"`;
+      return null;
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDePedidoCriado não inventa nada quando 'criar_pedido' foi bloqueado (não criou de verdade)",
+    rodar: () => {
+      const relatorioAmbiguo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-pedido-bloqueado-1",
+          toolNome: "criar_pedido",
+          output: { erro: "confirmacao_humana_necessaria", motivo: "empresa_exige_confirmacao_humana", total: 54.7 },
+        },
+      ];
+      const resultado = sintetizarAfirmacaoDePedidoCriado(relatorioAmbiguo, evidencias);
+      return resultado === relatorioAmbiguo ? null : "sintetizou afirmação de pedido criado mesmo com a criação tendo sido bloqueada";
     },
   },
 ];

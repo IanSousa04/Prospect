@@ -96,8 +96,8 @@ Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** um
 - [x] **[P1] Gerenciar o carrinho da IA (Order Context) direto da UI — humano edita o mesmo estado.** `SP: 8` ([detalhes](tasks/0063-gerenciar_carrinho_ia_ui.md))
 - [x] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** `SP: 3` ([detalhes](tasks/0018-tipo_entrega.md))
 - [x] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
-- [ ] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
-- [ ] **[P1] Confirmação explícita do pedido + criação real em `pedidos`/`itens_pedido`.** `SP: 3` ([detalhes](tasks/0055-confirmacao_criacao_pedido.md))
+- [x] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
+- [x] **[P1] Confirmação explícita do pedido + criação real em `pedidos`/`itens_pedido`.** `SP: 3` ([detalhes](tasks/0055-confirmacao_criacao_pedido.md))
 - [ ] **[P2] Motor genérico de etapas configurável por empresa (stretch, além do escopo mínimo acima).** `SP: 5` ([detalhes](tasks/0056-motor_generico_etapas.md))
 
 ### 3.2 Hardening da camada de escrita — P2

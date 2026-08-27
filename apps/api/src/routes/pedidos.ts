@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { PedidoDetalhado, StatusPedido, FormaPagamento, TipoEntrega, EnderecoEntrega } from "@prospect/shared";
-import { montarItensComSnapshot } from "@prospect/pedidos-core";
+import { criarPedidoComItens } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth } from "../lib/auth.js";
 
@@ -111,68 +111,26 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
       if (!atendimento) return reply.code(400).send({ error: "atendimento_invalido" });
     }
 
-    const montagem = await montarItensComSnapshot(supabaseAdmin, body.itens, empresaId);
-    if (!montagem.ok) return reply.code(400).send({ error: montagem.erro });
+    const resultado = await criarPedidoComItens(supabaseAdmin, {
+      empresaId,
+      clienteId: body.cliente_id,
+      atendimentoId: body.atendimento_id,
+      origem: "painel",
+      tipoEntrega: body.tipo_entrega,
+      enderecoJson: body.endereco_json,
+      taxaEntrega: body.taxa_entrega,
+      formaPagamento: body.forma_pagamento,
+      observacoes: body.observacoes,
+      itens: body.itens,
+    });
 
-    const total = Math.round((montagem.subtotal + body.taxa_entrega) * 100) / 100;
-
-    const { data: pedido, error: pedidoError } = await supabaseAdmin
-      .from("pedidos")
-      .insert({
-        empresa_id: empresaId,
-        cliente_id: body.cliente_id,
-        atendimento_id: body.atendimento_id,
-        tipo_entrega: body.tipo_entrega,
-        endereco_json: body.endereco_json,
-        taxa_entrega: body.taxa_entrega,
-        forma_pagamento: body.forma_pagamento,
-        observacoes: body.observacoes,
-        subtotal: montagem.subtotal,
-        total,
-      })
-      .select()
-      .single();
-
-    if (pedidoError || !pedido) {
-      request.log.error(pedidoError);
-      return reply.code(500).send({ error: "erro_ao_criar_pedido" });
+    if (!resultado.ok) {
+      const codigo = resultado.erro === "erro_ao_criar_pedido" || resultado.erro === "erro_ao_salvar_item_pedido" ? 500 : 400;
+      if (codigo === 500) request.log.error(resultado.erro);
+      return reply.code(codigo).send({ error: resultado.erro });
     }
 
-    for (const [ordem, item] of montagem.itens.entries()) {
-      const { data: itemCriado, error: itemError } = await supabaseAdmin
-        .from("itens_pedido")
-        .insert({
-          empresa_id: empresaId,
-          pedido_id: pedido.id,
-          produto_id: item.produto_id,
-          nome_produto: item.nome_produto,
-          quantidade: item.quantidade,
-          preco_unitario: item.preco_unitario,
-          observacoes: item.observacoes,
-          ordem,
-        })
-        .select("id")
-        .single();
-
-      if (itemError || !itemCriado) {
-        request.log.error(itemError);
-        return reply.code(500).send({ error: "erro_ao_salvar_item_pedido" });
-      }
-
-      if (item.opcoes.length > 0) {
-        await supabaseAdmin.from("itens_pedido_opcoes").insert(
-          item.opcoes.map((o) => ({
-            empresa_id: empresaId,
-            item_pedido_id: itemCriado.id,
-            opcao_id: o.opcao_id,
-            nome_opcao: o.nome_opcao,
-            preco_adicional: o.preco_adicional,
-          })),
-        );
-      }
-    }
-
-    return reply.code(201).send(pedido);
+    return reply.code(201).send(resultado.pedido);
   });
 
   app.post<{ Params: { id: string }; Body: { status: StatusPedido } }>(
