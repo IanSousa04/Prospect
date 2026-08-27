@@ -90,6 +90,18 @@ const IconArrowLeft = (
     <path d="M19 12H5M11 18l-6-6 6-6" />
   </svg>
 );
+const IconCheck = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
 const IconDownload = (
   <svg
     viewBox="0 0 24 24"
@@ -292,6 +304,7 @@ export default function Atendimento() {
   // já ativo com a IA ou já encerrado não tem pra onde devolver.
   const podeDevolverParaIa =
     atendimento.status !== "ia_atendendo" && atendimento.status !== "resolvido";
+  const podeFinalizar = atendimento.status !== "resolvido";
 
   async function assumir() {
     if (!id) return;
@@ -303,6 +316,21 @@ export default function Atendimento() {
     if (!id) return;
     await api.devolverParaIa(id);
     carregar();
+  }
+
+  async function finalizar() {
+    if (!id) return;
+    if (!window.confirm("Finalizar este atendimento? Essa ação não pode ser desfeita pela tela.")) return;
+    try {
+      await api.atualizarStatus(id, "resolvido");
+      carregar();
+    } catch (err) {
+      const mensagem =
+        err instanceof Error && err.message.includes("handoff_pendente_impede_finalizar")
+          ? "Existe um handoff aberto/assumido para este atendimento — resolva-o antes de finalizar."
+          : "Não foi possível finalizar o atendimento.";
+      window.alert(mensagem);
+    }
   }
 
   async function enviar() {
@@ -372,6 +400,14 @@ export default function Atendimento() {
           >
             {IconArrowRight}
             Assumir atendimento
+          </button>
+          <button
+            className="btn-ghost"
+            onClick={finalizar}
+            disabled={!podeFinalizar}
+          >
+            {IconCheck}
+            Finalizar atendimento
           </button>
         </div>
       </div>

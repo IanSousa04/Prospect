@@ -76,9 +76,9 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 
 ## 2. Atendimento (Kanban / conversa) — P2
 
-- [ ] **[P2] Finalizar atendimento.** `SP: 2` ([detalhes](tasks/0013-finalizar_atendimento.md))
-- [ ] **[P2] Devolver atendimento pra IA.** `SP: 2` ([detalhes](tasks/0014-devolver_atendimento.md))
-- [ ] **[P2] `POST /atendimentos/:id/status` não valida transição nenhuma.** `SP: 3` ([detalhes](tasks/0015-validar_transicao_status.md))
+- [x] **[P2] Finalizar atendimento.** `SP: 2` ([detalhes](tasks/0013-finalizar_atendimento.md))
+- [x] **[P2] Devolver atendimento pra IA.** `SP: 2` ([detalhes](tasks/0014-devolver_atendimento.md))
+- [x] **[P2] `POST /atendimentos/:id/status` não valida transição nenhuma.** `SP: 3` ([detalhes](tasks/0015-validar_transicao_status.md))
 - [ ] **[P2] Cliente (CRM simplificado) — campos de personalização ainda não confirmados em uso.** `SP: 3` ([detalhes](tasks/0016-crm_personalizacao.md))
 
 ## 3. Camada de IA — MVP 2 e além (P2)

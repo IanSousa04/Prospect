@@ -11,6 +11,19 @@ const STATUS_VALIDOS: StatusAtendimento[] = [
   "resolvido",
 ];
 
+// Transições permitidas via PATCH genérico — mesmo padrão de
+// `TRANSICOES` em pedidos.ts. `/assumir` e `/devolver-ia` continuam sendo
+// os caminhos normais pra entrar/sair de `humano_atendendo`/`ia_atendendo`;
+// esta rota cobre o resto (ex.: IA escalando pra "solicitou humano",
+// cliente pedindo humano, ou finalizar a partir de qualquer estado ativo).
+const TRANSICOES: Record<StatusAtendimento, StatusAtendimento[]> = {
+  ia_atendendo: ["ia_solicitou_humano", "cliente_solicitou_humano", "humano_atendendo", "resolvido"],
+  ia_solicitou_humano: ["humano_atendendo", "ia_atendendo", "resolvido"],
+  cliente_solicitou_humano: ["humano_atendendo", "ia_atendendo", "resolvido"],
+  humano_atendendo: ["ia_atendendo", "resolvido"],
+  resolvido: [],
+};
+
 function paraContexto(row: any): AtendimentoComContexto {
   return {
     ...row,
@@ -155,6 +168,39 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
 
       if (!STATUS_VALIDOS.includes(status)) {
         return reply.code(400).send({ error: "status_invalido" });
+      }
+
+      const { data: atual, error: buscaError } = await supabaseAdmin
+        .from("atendimentos")
+        .select("status, handoffs(status)")
+        .eq("id", id)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+
+      if (buscaError) {
+        request.log.error(buscaError);
+        return reply.code(500).send({ error: "erro_ao_buscar_atendimento" });
+      }
+      if (!atual) {
+        return reply.code(404).send({ error: "atendimento_nao_encontrado" });
+      }
+
+      const permitido = TRANSICOES[atual.status as StatusAtendimento]?.includes(status);
+      if (!permitido) {
+        return reply.code(400).send({ error: "transicao_de_status_nao_permitida" });
+      }
+
+      // Encerrar com handoff aberto/assumido deixaria um humano esperando
+      // resposta sem atendimento nenhum acompanhando — diferente de
+      // devolver pra IA (que resolve o handoff de propósito), finalizar
+      // precisa que o handoff já tenha sido tratado antes.
+      if (status === "resolvido") {
+        const handoffPendente = ((atual as any).handoffs ?? []).some(
+          (h: { status: string }) => h.status === "aberto" || h.status === "assumido",
+        );
+        if (handoffPendente) {
+          return reply.code(400).send({ error: "handoff_pendente_impede_finalizar" });
+        }
       }
 
       const { data, error } = await supabaseAdmin
