@@ -29,6 +29,13 @@ function buildPrompt(repoRootPath: string, taskFile: string): string {
     "Implemente esta tarefa completamente. Se ela envolver comportamento da IA de atendimento,",
     "ferramentas/orquestrador, permissões, catálogo semântico, handoff ou mensageria WhatsApp,",
     "rode a skill `food-ai-guardrails` antes de considerar a tarefa concluída.",
+    "",
+    "REGRA OBRIGATÓRIA: NUNCA edite o arquivo ROADMAP.md, sob nenhuma circunstância — nem para",
+    "marcar a tarefa como concluída, nem para qualquer outro ajuste. Marcar uma tarefa como",
+    "concluída no ROADMAP.md é responsabilidade exclusiva do sistema orquestrador, que só faz",
+    "isso depois de rodar a validação determinística (typecheck) de forma independente. Você pode",
+    "e deve atualizar o arquivo da própria tarefa (o arquivo de detalhes acima) com o resultado da",
+    "implementação, mas o ROADMAP.md é fora do seu escopo de edição nesta sessão.",
   ].join("\n");
 }
 

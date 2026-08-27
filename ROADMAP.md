@@ -69,9 +69,8 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 - [x] **[P1] Alinhar a matriz de decisão com a spec: "confiança média → investigar mais".** `SP: 3` ([detalhes](tasks/0007-matriz_decisao.md))
 - [x] **[P1] Identidade da IA.** `SP: 2` ([detalhes](tasks/0008-identidade_ia.md))
 - [x] **[P1] Cliente manda imagem/áudio → handoff em vez de silêncio.** `SP: 3` ([detalhes](tasks/0009-midia_handoff.md))
-- [ ] **[P1] Guard determinístico contra prompt injection via conhecimento/resultados de ferramenta.** `SP: 8` ([detalhes](tasks/0010-guard_prompt_injection.md))
+- [x] **[P1] Guard determinístico contra prompt injection via conhecimento/resultados de ferramenta.** `SP: 8` ([detalhes](tasks/0010-guard_prompt_injection.md))
 - [ ] **[P1] `ia_sessoes` em uso (memória derivada da conversa).** `SP: 5` ([detalhes](tasks/0011-ia_sessoes.md))
-- [ ] **[P1] Simulador da IA.** `SP: 8` ([detalhes](tasks/0012-simulador_ia.md))
 
 ---
 
@@ -145,3 +144,4 @@ Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** um
 - [ ] **[P2] Autenticação de service account pra IA** `SP: 5` ([detalhes](tasks/0050-service_account_ia.md))
 - [ ] **[P2] Nenhuma política de retenção/expurgo de dados pessoais de cliente** `SP: 5` ([detalhes](tasks/0051-retencao_dados.md))
 - [x] **[P2] Multi-tenancy — banco compartilhado com RLS.** `SP: 8` ([detalhes](tasks/0052-multi_tenancy_rls.md))
+- [ ] **[P2] Simulador da IA.** `SP: 8` ([detalhes](tasks/0012-simulador_ia.md))

@@ -1,7 +1,8 @@
 {
   "currentTask": null,
   "completed": [
-    "tasks/0005-envio_real_sombra.md"
+    "tasks/0005-envio_real_sombra.md",
+    "tasks/0010-guard_prompt_injection.md"
   ],
-  "updatedAt": "2026-08-27T02:04:03.276Z"
+  "updatedAt": "2026-08-27T04:00:00.000Z"
 }

@@ -15,6 +15,11 @@ import {
 } from "./verificacao.js";
 import { sanitizarFormatacaoWhatsapp } from "./sanitizacao.js";
 import {
+  buscarPromptInjectionEmEvidencia,
+  relatorioObedeceuInjection,
+  detectarCopiaLiteralDeInjection,
+} from "./sanitizacao-prompt-injection.js";
+import {
   clientePediuHumano,
   mensagemDeTransferencia,
   pedeTempoReal,
@@ -169,6 +174,50 @@ export async function processarMensagem(
   }
 
   const { relatorio, evidencias } = await investigar(pergunta, historico, ctx, params.comportamento);
+
+  // Guard contra prompt injection via conhecimento/ferramentas (ROADMAP.md §1,
+  // tarefa 0010): checagem determinística ANTES de qualquer decisão. Se
+  // alguma evidência contém padrão de injection E o relatório do Investigador
+  // reproduz esse padrão (literal ou estrutural), isso indica que o modelo
+  // "obedeceu" uma instrução embutida em vez de apenas citar um fato — veta e
+  // força handoff humano (nunca tenta "corrigir" o dado, que pode ter sido
+  // injetado maliciosamente no conhecimento).
+  const camposComInjection = evidencias.flatMap((e) => buscarPromptInjectionEmEvidencia(e.output));
+  if (camposComInjection.length > 0) {
+    // Se evidência tinha injection, checa se o relatório obedeceu
+    const textoRelatorio = JSON.stringify(relatorio.afirmacoes.map((a) => a.texto));
+    const checkObediencia = relatorioObedeceuInjection(textoRelatorio, evidencias);
+    const trechosCopiados = detectarCopiaLiteralDeInjection(textoRelatorio, evidencias);
+
+    if (checkObediencia.obedeceu || trechosCopiados.length > 0) {
+      const relatorioVazio: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: relatorio.ferramentasChamadas,
+      };
+      await registrarDecisao({
+        ctx,
+        confianca: "baixa",
+        cobertura: 0,
+        acao: "handoff",
+        relatorio: relatorioVazio,
+      });
+      await criarHandoff(ctx.empresaId, {
+        atendimento_id: ctx.atendimentoId,
+        origem: "falha_conhecimento",
+        motivo: "Detectado prompt injection em dados externos (conhecimento/ferramenta)",
+        resumo: `Cliente perguntou: "${pergunta}". Dados retornados por ferramentas continham padrões suspeitos de prompt injection e o relatório do Investigador reproduziu instruções embutidas. Campos afetados: ${camposComInjection.map((c) => c.caminho).join(", ")}`,
+        acao_sugerida:
+          "URGENTE: Revisar manualmente o conteúdo de conhecimento_itens e descrições de produtos. Possível tentativa de manipulação da IA via dados maliciosos.",
+        prioridade: "alta",
+      });
+      return { acao: "handoff", respostaTexto: null, confianca: "baixa" };
+    }
+    // Se evidência tinha injection mas o relatório resistiu (não reproduziu),
+    // continua — o modelo seguiu a regra 5 do prompt do Investigador.
+  }
+
   const confianca = computeConfianca(relatorio);
   const decisao = decidir(relatorio, confianca);
   const cobertura = new Set(
