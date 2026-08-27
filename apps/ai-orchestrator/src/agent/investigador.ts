@@ -328,6 +328,12 @@ export async function investigar(
   historico: ChatMessage[],
   ctx: ToolContext,
   comportamento: ComportamentoJson,
+  /** Texto curto derivado de `ia_sessoes` (ver agent/sessao.ts) — ex.:
+   * último produto mencionado. null quando não há sessão ou nada relevante
+   * nela ainda. Existe pra resolver referência pronominal ("e esse aí?")
+   * quando a janela de histórico carregada pelo poller já não cobre a
+   * mensagem original. */
+  contextoSessao: string | null = null,
 ): Promise<ResultadoInvestigacao> {
   const chat = getChatModel();
   const tools = getToolDefinitionsForLlm(ctx.permissoes);
@@ -335,6 +341,7 @@ export async function investigar(
 
   const messages: ChatMessage[] = [
     { role: "system", content: montarPromptInvestigador(comportamento) },
+    ...(contextoSessao ? [{ role: "system" as const, content: contextoSessao }] : []),
     ...historico,
     { role: "user", content: pergunta },
   ];

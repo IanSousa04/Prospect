@@ -4,6 +4,7 @@ import { criarHandoff } from "../handoffs.js";
 import type { ChatMessage } from "../llm/types.js";
 import type { ToolContext } from "../tools/index.js";
 import { investigar } from "./investigador.js";
+import { carregarSessao, atualizarSessaoComEvidencias } from "./sessao.js";
 import { redigir } from "./atendente.js";
 import { computeConfianca } from "./confianca.js";
 import { decidir } from "./decisao.js";
@@ -173,7 +174,19 @@ export async function processarMensagem(
     };
   }
 
-  const { relatorio, evidencias } = await investigar(pergunta, historico, ctx, params.comportamento);
+  // Memória curta entre turnos (ver agent/sessao.ts) — carregada antes da
+  // investigação pra dar contexto de "último produto mencionado" quando o
+  // histórico bruto passado ao Investigador não cobre mais aquela mensagem.
+  const sessao = await carregarSessao(ctx);
+  const contextoSessao = sessao?.ultimo_produto_mencionado
+    ? `Contexto de sessão: o cliente mencionou por último o produto/combo "${sessao.ultimo_produto_mencionado.nome}" (id: ${sessao.ultimo_produto_mencionado.id}). Use isso só se a pergunta atual claramente se referir a ele por pronome/referência implícita (ex.: "esse", "ele", "o mesmo") — nunca para responder sobre um produto diferente.`
+    : null;
+
+  const { relatorio, evidencias } = await investigar(pergunta, historico, ctx, params.comportamento, contextoSessao);
+  // Não bloqueia a resposta ao cliente por causa de memória auxiliar —
+  // atualiza depois de já ter as evidências, mas antes do retorno, pra não
+  // perder o resultado de rodadas onde a IA acaba fazendo handoff.
+  await atualizarSessaoComEvidencias(ctx, evidencias);
 
   // Guard contra prompt injection via conhecimento/ferramentas (ROADMAP.md §1,
   // tarefa 0010): checagem determinística ANTES de qualquer decisão. Se

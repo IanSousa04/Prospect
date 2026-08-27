@@ -60,6 +60,7 @@ const CAMPOS_COMPORTAMENTO: Array<{ campo: keyof ComportamentoJson; titulo: stri
   { campo: "upsell_cross_sell", titulo: "Upsell / cross-sell", desc: "IA pode mencionar upgrades ou produtos complementares na resposta." },
   { campo: "recuperar_intencao_compra", titulo: "Recuperar intenção de compra", desc: "IA pode retomar um pedido ou interesse anterior não finalizado." },
   { campo: "pos_venda", titulo: "Pós-venda", desc: 'IA pode perguntar sobre a experiência após o pedido (ex.: "como foi?").' },
+  { campo: "personalizar_com_historico", titulo: "Personalizar com histórico", desc: "IA pode citar o produto favorito do cliente (baseado no histórico de pedidos) para sugerir repetição ou novidade." },
 ];
 
 export default function ConfiguracoesIa() {

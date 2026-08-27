@@ -48,6 +48,7 @@ export const ComportamentoJsonSchema = z
     fazer_recomendacoes: z.boolean().optional(),
     oferecer_adicionais: z.boolean().optional(),
     oferecer_combos: z.boolean().optional(),
+    personalizar_com_historico: z.boolean().optional(),
     upsell_cross_sell: z.boolean().optional(),
     recuperar_intencao_compra: z.boolean().optional(),
     pos_venda: z.boolean().optional(),

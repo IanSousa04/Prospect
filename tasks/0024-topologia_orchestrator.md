@@ -13,3 +13,5 @@ Trade-off aceito: hoje se o `ai-orchestrator` de uma empresa trava, só ela é a
 Trabalho de implementação: (1) remover `EMPRESA_ID` de `apps/ai-orchestrator/.env.example`/`lib/env.ts`; (2) `poller.ts`: loop sobre empresas ativas com concorrência limitada e `try/catch` por empresa; (3) `DEEPSEEK_API_KEY`/credenciais Supabase deixam de ser "por empresa"; (4) nenhuma mudança necessária em `tools/`, `agent/`, `handoffs.ts`.
 
 Topologia alvo: **N `whatsapp-worker` (um por empresa) : 1 `ai-orchestrator` (todas as empresas) : 1 `api`**.
+
+**Nota (tarefa 0062):** a razão de `whatsapp-worker` continuar 1-por-empresa é a restrição técnica do `whatsapp-web.js`/Puppeteer, não uma escolha de arquitetura. Se/quando a migração pra API oficial do WhatsApp Business acontecer (0062), essa restrição desaparece — o worker oficial (baseado em webhook, sem sessão de navegador presa a um `Client`) pode passar a multiplexar empresas como o `ai-orchestrator` já faz, simplificando a topologia ainda mais. Não é pré-requisito um do outro (esta tarefa não depende de 0062 pra ser feita), só um efeito colateral a considerar se a ordem de implementação permitir.

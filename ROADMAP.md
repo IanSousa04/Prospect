@@ -70,7 +70,7 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 - [x] **[P1] Identidade da IA.** `SP: 2` ([detalhes](tasks/0008-identidade_ia.md))
 - [x] **[P1] Cliente manda imagem/áudio → handoff em vez de silêncio.** `SP: 3` ([detalhes](tasks/0009-midia_handoff.md))
 - [x] **[P1] Guard determinístico contra prompt injection via conhecimento/resultados de ferramenta.** `SP: 8` ([detalhes](tasks/0010-guard_prompt_injection.md))
-- [ ] **[P1] `ia_sessoes` em uso (memória derivada da conversa).** `SP: 5` ([detalhes](tasks/0011-ia_sessoes.md))
+- [x] **[P1] `ia_sessoes` em uso (memória derivada da conversa).** `SP: 5` ([detalhes](tasks/0011-ia_sessoes.md))
 
 ---
 
@@ -79,30 +79,54 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 - [x] **[P2] Finalizar atendimento.** `SP: 2` ([detalhes](tasks/0013-finalizar_atendimento.md))
 - [x] **[P2] Devolver atendimento pra IA.** `SP: 2` ([detalhes](tasks/0014-devolver_atendimento.md))
 - [x] **[P2] `POST /atendimentos/:id/status` não valida transição nenhuma.** `SP: 3` ([detalhes](tasks/0015-validar_transicao_status.md))
-- [ ] **[P2] Cliente (CRM simplificado) — campos de personalização ainda não confirmados em uso.** `SP: 3` ([detalhes](tasks/0016-crm_personalizacao.md))
+- [x] **[P2] Cliente (CRM simplificado) — campos de personalização ainda não confirmados em uso.** `SP: 3` ([detalhes](tasks/0016-crm_personalizacao.md))
 
 ## 3. Camada de IA — MVP 2 e além (P2)
 
-### Fechar o ciclo comercial da IA (realizar pedido) — pedido do usuário, ainda não desenhado em código
+Reorganizada em 2026-08-27 por ordem de dependência lógica dentro de cada prioridade (não só por número); os 3 épicos de 13 SP (`criar_pedido`, tools de escrita restantes, migração do WhatsApp) foram quebrados em subtarefas menores — os itens originais continuam em `tasks/` como referência de desenho/contexto, mas saem da lista marcável abaixo (ver nota "Desmembrada em" em cada um).
 
-Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** uma venda. Nenhum destes itens tem fluxo conversacional implementado ainda. Ordem de dependência: item 1 é pré-requisito de todos os outros.
+### 3.1 Fechar o ciclo comercial da IA (realizar pedido) — P1
 
-- [ ] **[P1] `criar_pedido` — tool de escrita com fluxo conversacional guiado, orientado a estado estruturado (não histórico de chat).** `SP: 13` ([detalhes](tasks/0017-tool_escrita.md))
+Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** uma venda. Ordem de dependência: Order Context → tools de carrinho → confirmação/criação é o caminho mínimo pra IA fechar uma venda de ponta a ponta; tipo de entrega, endereço e forma de pagamento entram entre o carrinho e a confirmação; o motor genérico de etapas é stretch opcional, só depois do resto validado em produção.
+
+- [ ] **[P1] Order Context — estado estruturado do pedido em construção.** `SP: 5` ([detalhes](tasks/0053-order_context.md))
+- [ ] **[P1] Tools de carrinho (`add_to_cart`, `remove_from_cart`, `update_cart_item`, `get_cart`, `calculate_cart`).** `SP: 5` ([detalhes](tasks/0054-tools_carrinho.md))
 - [ ] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** `SP: 3` ([detalhes](tasks/0018-tipo_entrega.md))
-- [ ] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
 - [ ] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
-- [ ] **[P2] Tools de escrita restantes: `adicionar_item`, `alterar_item`, `cancelar_pedido`, `atualizar_cliente`.** `SP: 13` ([detalhes](tasks/0021-tools_escrita_restantes.md))
-- [ ] **[P2] Fluxo de confirmação humana fora do texto livre** `SP: 8` ([detalhes](tasks/0022-confirmacao_humana.md))
+- [ ] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
+- [ ] **[P1] Confirmação explícita do pedido + criação real em `pedidos`/`itens_pedido`.** `SP: 3` ([detalhes](tasks/0055-confirmacao_criacao_pedido.md))
+- [ ] **[P2] Motor genérico de etapas configurável por empresa (stretch, além do escopo mínimo acima).** `SP: 5` ([detalhes](tasks/0056-motor_generico_etapas.md))
+
+### 3.2 Hardening da camada de escrita — P2
+
+Depende do ciclo comercial mínimo (3.1) estar rodando: risco real na matriz de decisão precisa existir antes/junto das próximas tools de escrita ligarem em produção real (é o que decide se uma ação irreversível vira handoff); confirmação humana e as tools `adicionar_item`/`alterar_item`/`cancelar_pedido`/`atualizar_cliente` expandem a superfície de escrita depois que o padrão estiver validado por `criar_pedido`.
+
 - [ ] **[P2] Risco real na matriz de decisão + enforcement das permissões de escrita.** `SP: 8` ([detalhes](tasks/0023-risco_matriz_decisao.md))
-- [ ] **[P2] Topologia de processos do `ai-orchestrator` — migrar de "1 processo por empresa" para "1 processo compartilhado".** `SP: 8` ([detalhes](tasks/0024-topologia_orchestrator.md))
-- [ ] **[P2] Cache.** `SP: 5` ([detalhes](tasks/0025-cache.md))
-- [ ] **[P2] Embeddings/versionamento de conhecimento** `SP: 8` ([detalhes](tasks/0026-embeddings_versionamento.md))
-- [ ] **[P2] `whatsapp-web.js` não é a API oficial do WhatsApp Business.** `SP: 13` ([detalhes](tasks/0027-whatsapp_nao_oficial.md))
-- [x] **Modo teste com whitelist de números.** `SP: 2` ([detalhes](tasks/0028-modo_teste_whitelist.md))
-- [ ] **[P2] Princípio explícito do usuário: `.env` deve conter só dados de conexão com o Supabase — todo o resto vira configuração no banco, por empresa, com gestão via UI.** `SP: 5` ([detalhes](tasks/0029-env_so_supabase.md))
+- [ ] **[P2] Fluxo de confirmação humana fora do texto livre.** `SP: 8` ([detalhes](tasks/0022-confirmacao_humana.md))
+- [ ] **[P2] Tools `adicionar_item` / `alterar_item`.** `SP: 8` ([detalhes](tasks/0057-adicionar_alterar_item.md))
+- [ ] **[P2] Tool `cancelar_pedido`.** `SP: 3` ([detalhes](tasks/0058-cancelar_pedido.md))
+- [ ] **[P2] Tool `atualizar_cliente`.** `SP: 2` ([detalhes](tasks/0059-atualizar_cliente.md))
+
+### 3.3 Qualidade, cobertura e performance — P2
+
+Sem dependência forte do ciclo comercial — podem entrar em paralelo a qualquer momento. Itens já concluídos ficam registrados aqui por serem da mesma família (qualidade da resposta da IA).
+
+- [ ] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
 - [x] **Agrupar mensagens rápidas do cliente antes de responder.** `SP: 3` ([detalhes](tasks/0030-agrupar_mensagens.md))
 - [x] **Formatação das respostas deve usar a sintaxe real do WhatsApp, não Markdown genérico.** `SP: 2` ([detalhes](tasks/0031-formatacao_whatsapp.md))
-- [ ] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
+- [ ] **[P2] Cache.** `SP: 5` ([detalhes](tasks/0025-cache.md))
+- [ ] **[P2] Embeddings/versionamento de conhecimento.** `SP: 8` ([detalhes](tasks/0026-embeddings_versionamento.md))
+
+### 3.4 Infraestrutura, configuração e canal WhatsApp — P2
+
+Independente do ciclo comercial. Ordem sugerida: topologia do orchestrator antes do `.env` porque `EMPRESA_ID` só some de vez quando a topologia muda; a trilha do WhatsApp oficial (monitorar → avaliar provedores → migrar) é sequencial por natureza e pode rodar em paralelo às outras duas.
+
+- [x] **Modo teste com whitelist de números.** `SP: 2` ([detalhes](tasks/0028-modo_teste_whitelist.md))
+- [ ] **[P2] Topologia de processos do `ai-orchestrator` — migrar de "1 processo por empresa" para "1 processo compartilhado".** `SP: 8` ([detalhes](tasks/0024-topologia_orchestrator.md))
+- [ ] **[P2] Princípio explícito do usuário: `.env` deve conter só dados de conexão com o Supabase — todo o resto vira configuração no banco, por empresa, com gestão via UI.** `SP: 5` ([detalhes](tasks/0029-env_so_supabase.md))
+- [ ] **[P2] Monitorar risco atual de `whatsapp-web.js` + critério de decisão de migração.** `SP: 2` ([detalhes](tasks/0060-whatsapp_monitorar_risco.md))
+- [ ] **[P2] Avaliar provedores oficiais de WhatsApp Business API.** `SP: 3` ([detalhes](tasks/0061-whatsapp_avaliar_provedores.md))
+- [ ] **[P2] Migrar `whatsapp-worker` para API oficial.** `SP: 8` ([detalhes](tasks/0062-whatsapp_migrar_api_oficial.md))
 
 ## 4. Design — P2
 

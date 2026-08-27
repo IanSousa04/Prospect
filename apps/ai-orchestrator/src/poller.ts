@@ -174,6 +174,7 @@ async function processarUmaMensagem(rajada: MensagemCliente[]): Promise<void> {
     clienteId: atendimento.cliente_id,
     permissoes: config.permissoes,
     mensagemId: gatilho.id,
+    comportamento: config.comportamento,
   };
 
   // Rajada vira um único turno — todas as mensagens acumuladas na janela de

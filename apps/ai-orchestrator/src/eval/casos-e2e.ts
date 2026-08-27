@@ -171,6 +171,7 @@ export async function rodarCasoE2E(caso: CasoE2E): Promise<{ ok: boolean; motivo
       clienteId: teste.clienteId,
       permissoes: mapaDePermissoes((permissoesRows ?? []) as IaPermissao[]),
       mensagemId: null,
+      comportamento: comportamentoParseado.success ? comportamentoParseado.data : {},
     };
 
     const resultado = await processarMensagem({

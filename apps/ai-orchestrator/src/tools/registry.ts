@@ -1,4 +1,4 @@
-import { isPermitido, type IaPermissao, type NomeFerramenta } from "@prospect/shared";
+import { isPermitido, type ComportamentoJson, type IaPermissao, type NomeFerramenta } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import type { ToolDefinitionForLlm } from "../llm/client.js";
 
@@ -10,6 +10,11 @@ export interface ToolContext {
   /** Mensagem do cliente que originou este ciclo — usada só para auditoria
    * (ia_execucoes.mensagem_id), nunca para lógica de negócio da tool. */
   mensagemId: string | null;
+  /** `ia_configuracoes.comportamento_json` desta empresa, já parseado —
+   * mesmo objeto que chega ao Investigador. Tools de leitura de baixo risco
+   * que decidem incluir/omitir um campo proativo (ex.: produto favorito em
+   * `consultar_cliente`) consultam aqui em vez de reimplementar a busca. */
+  comportamento: ComportamentoJson;
 }
 
 export interface ToolDefinicao<TInput = any, TOutput = any> {
