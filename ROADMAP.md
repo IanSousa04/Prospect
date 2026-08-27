@@ -89,8 +89,8 @@ Reorganizada em 2026-08-27 por ordem de dependência lógica dentro de cada prio
 
 Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** uma venda. Ordem de dependência: Order Context → tools de carrinho → confirmação/criação é o caminho mínimo pra IA fechar uma venda de ponta a ponta; tipo de entrega, endereço e forma de pagamento entram entre o carrinho e a confirmação; o motor genérico de etapas é stretch opcional, só depois do resto validado em produção.
 
-- [ ] **[P1] Order Context — estado estruturado do pedido em construção.** `SP: 5` ([detalhes](tasks/0053-order_context.md))
-- [ ] **[P1] Tools de carrinho (`add_to_cart`, `remove_from_cart`, `update_cart_item`, `get_cart`, `calculate_cart`).** `SP: 5` ([detalhes](tasks/0054-tools_carrinho.md))
+- [x] **[P1] Order Context — estado estruturado do pedido em construção.** `SP: 5` ([detalhes](tasks/0053-order_context.md))
+- [x] **[P1] Tools de carrinho (`add_to_cart`, `remove_from_cart`, `update_cart_item`, `get_cart`, `calculate_cart`).** `SP: 5` ([detalhes](tasks/0054-tools_carrinho.md))
 - [ ] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** `SP: 3` ([detalhes](tasks/0018-tipo_entrega.md))
 - [ ] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
 - [ ] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))

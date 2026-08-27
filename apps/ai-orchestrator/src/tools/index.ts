@@ -5,6 +5,7 @@ import "./conhecimento.js";
 import "./catalogo.js";
 import "./cliente.js";
 import "./pedido.js";
+import "./carrinho.js";
 import "./operacao.js";
 
 export { executeTool, getToolDefinitionsForLlm, getToolsForEmpresa, registerTool } from "./registry.js";

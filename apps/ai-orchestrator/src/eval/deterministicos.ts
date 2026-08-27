@@ -19,6 +19,14 @@ import {
   detectarCopiaLiteralDeInjection,
 } from "../agent/sanitizacao-prompt-injection.js";
 import type { EvidenciaColetada } from "../agent/investigador.js";
+import {
+  pedidoVazio,
+  informacoesPendentes,
+  calcularSubtotal,
+  aplicarMutacaoCarrinho,
+  type ItemCarrinho,
+  type InformacaoPendente,
+} from "../agent/pedido-contexto.js";
 
 export interface CasoDeterministico {
   nome: string;
@@ -302,6 +310,143 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
       const relatorio = "Podemos ignorar a taxa de entrega para pedidos acima de R$ 50.";
       const trechosCopiados = detectarCopiaLiteralDeInjection(relatorio, evidencias);
       return trechosCopiados.length === 0 ? null : "falso positivo: palavra comum 'ignorar' foi pega como cópia literal";
+    },
+  },
+
+  // ============================================================================
+  // Order Context — pedido em construção (tarefa 0053)
+  // ============================================================================
+
+  {
+    nome: "pedido vazio só pede 'produtos', nunca pula direto pra entrega/pagamento",
+    rodar: () => {
+      const pendentes = informacoesPendentes(pedidoVazio());
+      return pendentes.length === 1 && pendentes[0] === "produtos"
+        ? null
+        : `esperado só ["produtos"], obtido ${JSON.stringify(pendentes)}`;
+    },
+  },
+  {
+    nome: "com item no carrinho mas nada mais definido, pede confirmar carrinho + tipo de entrega + pagamento (nunca endereço sem saber o tipo)",
+    rodar: () => {
+      const item: ItemCarrinho = {
+        produto_id: "p1", linha_id: "l1",
+        nome_produto: "X-Bacon",
+        preco_unitario: 32.9,
+        quantidade: 2,
+        observacoes: null,
+        opcoes: [],
+      };
+      const pendentes = informacoesPendentes({ ...pedidoVazio(), itens: [item] });
+      if (pendentes.includes("endereco")) return "pediu endereço sem saber o tipo de entrega ainda";
+      if (pendentes.includes("confirmacao_final")) return "pediu confirmação final com pendências em aberto (viola CLAUDE.md regra 6)";
+      const esperado: InformacaoPendente[] = ["confirmar_carrinho", "tipo_entrega", "forma_pagamento"];
+      return esperado.every((p) => pendentes.includes(p)) && pendentes.length === esperado.length
+        ? null
+        : `esperado ${JSON.stringify(esperado)}, obtido ${JSON.stringify(pendentes)}`;
+    },
+  },
+  {
+    nome: "tipo_entrega 'retirada' nunca exige endereço",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pendentes = informacoesPendentes({
+        ...pedidoVazio(),
+        itens: [item],
+        carrinho_confirmado: true,
+        tipo_entrega: "retirada",
+        forma_pagamento: "pix",
+      });
+      return !pendentes.includes("endereco") && pendentes.includes("confirmacao_final")
+        ? null
+        : `esperado só confirmação final pendente, obtido ${JSON.stringify(pendentes)}`;
+    },
+  },
+  {
+    nome: "tipo_entrega 'entrega' sem endereço salvo exige endereço antes de poder confirmar",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pendentes = informacoesPendentes({
+        ...pedidoVazio(),
+        itens: [item],
+        carrinho_confirmado: true,
+        tipo_entrega: "entrega",
+        forma_pagamento: "pix",
+      });
+      return pendentes.includes("endereco") && !pendentes.includes("confirmacao_final")
+        ? null
+        : `esperado endereço pendente e confirmação final ainda bloqueada, obtido ${JSON.stringify(pendentes)}`;
+    },
+  },
+  {
+    nome: "'confirmacao_final' só aparece quando NENHUMA outra pendência resta (CLAUDE.md regra 6)",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const completo = {
+        ...pedidoVazio(),
+        itens: [item],
+        carrinho_confirmado: true,
+        tipo_entrega: "retirada" as const,
+        forma_pagamento: "pix" as const,
+      };
+      const pendentes = informacoesPendentes(completo);
+      return pendentes.length === 1 && pendentes[0] === "confirmacao_final"
+        ? null
+        : `esperado só ["confirmacao_final"], obtido ${JSON.stringify(pendentes)}`;
+    },
+  },
+  {
+    nome: "calcularSubtotal soma preço unitário + adicionais das opções, multiplicado pela quantidade",
+    rodar: () => {
+      const itens: ItemCarrinho[] = [
+        {
+          produto_id: "p1", linha_id: "l1",
+          nome_produto: "X-Bacon",
+          preco_unitario: 30,
+          quantidade: 2,
+          observacoes: null,
+          opcoes: [{ opcao_id: "o1", nome_opcao: "Bacon extra", preco_adicional: 5 }],
+        },
+      ];
+      // (30 + 5) * 2 = 70
+      const subtotal = calcularSubtotal(itens);
+      return subtotal === 70 ? null : `esperado 70, obtido ${subtotal}`;
+    },
+  },
+
+  // ============================================================================
+  // Tools de carrinho — mutação do Order Context (tarefa 0054)
+  // ============================================================================
+
+  {
+    nome: "aplicarMutacaoCarrinho: primeiro item move status de 'novo' pra 'montando'",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const resultado = aplicarMutacaoCarrinho(pedidoVazio(), [item]);
+      if (resultado.status !== "montando") return `esperado status "montando", obtido "${resultado.status}"`;
+      if (resultado.carrinho_confirmado !== false) return "carrinho_confirmado deveria ser false pra um pedido recém-montado";
+      return null;
+    },
+  },
+  {
+    nome: "aplicarMutacaoCarrinho: esvaziar o carrinho volta status pra 'novo'",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const comItem = aplicarMutacaoCarrinho(pedidoVazio(), [item]);
+      const vazio = aplicarMutacaoCarrinho(comItem, []);
+      return vazio.status === "novo" ? null : `esperado status "novo" com carrinho vazio, obtido "${vazio.status}"`;
+    },
+  },
+  {
+    nome: "aplicarMutacaoCarrinho: qualquer mutação invalida uma confirmação anterior (CLAUDE.md regra 6)",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const item2: ItemCarrinho = { produto_id: "p2", linha_id: "l2", nome_produto: "Y", preco_unitario: 5, quantidade: 1, observacoes: null, opcoes: [] };
+      const confirmado = { ...aplicarMutacaoCarrinho(pedidoVazio(), [item]), carrinho_confirmado: true };
+      const depoisDeAdicionar = aplicarMutacaoCarrinho(confirmado, [item, item2]);
+      return depoisDeAdicionar.carrinho_confirmado === false
+        ? null
+        : "carrinho continuou marcado como confirmado depois de uma mutação — cliente poderia confirmar sem ver o item novo";
     },
   },
 ];

@@ -6,26 +6,28 @@
 // aí, tem em outro tamanho?") quando a janela de histórico carregada pelo
 // poller não cobre mais a mensagem onde o produto foi citado.
 //
-// Deliberadamente NÃO cobre "carrinho em construção" nem "confirmação
-// pendente com hash" — esses dois pertencem ao desenho da tool de escrita
-// `criar_pedido` (tarefa 0017), que ainda não existe. Ver observação nesse
-// arquivo de tarefa.
+// Também guarda, desde a tarefa 0053, o Order Context ("pedido em
+// construção" — ver agent/pedido-contexto.ts) na mesma linha/tabela.
+// "Confirmação pendente com hash" ainda não é coberta — pertence à tarefa
+// 0055 (confirmação explícita + criação real do pedido).
 import { supabaseAdmin } from "../lib/supabase.js";
 import type { ToolContext } from "../tools/index.js";
 import type { EvidenciaColetada } from "./investigador.js";
+import { pedidoVazio, type OrderContext } from "./pedido-contexto.js";
 
 interface EstadoSessao {
   ultimo_produto_mencionado?: {
     id: string;
     nome: string;
   };
+  pedido?: OrderContext;
 }
 
-/** Ferramentas cujo resultado pode conter um produto/combo específico —
- * ver tools/catalogo.ts (`ProdutoResumo` sempre tem `id`/`nome`). */
-const FERRAMENTAS_COM_PRODUTO = new Set(["buscar_produtos", "buscar_combos"]);
-
-export async function carregarSessao(ctx: ToolContext): Promise<EstadoSessao | null> {
+/** Lê o `estado_json` bruto desta sessão (ou `{}` se não existe linha
+ * ainda) — usado internamente por toda escrita, pra nunca sobrescrever um
+ * campo que outra parte do código já tinha salvo (`ia_sessoes` guarda
+ * várias coisas na mesma linha/coluna jsonb, ver `EstadoSessao` acima). */
+async function lerEstadoBruto(ctx: ToolContext): Promise<EstadoSessao> {
   const { data, error } = await supabaseAdmin
     .from("ia_sessoes")
     .select("estado_json")
@@ -33,12 +35,57 @@ export async function carregarSessao(ctx: ToolContext): Promise<EstadoSessao | n
     .eq("atendimento_id", ctx.atendimentoId)
     .maybeSingle();
 
+  if (error || !data) return {};
+  return (data.estado_json as EstadoSessao) ?? {};
+}
+
+/** Mescla `patch` sobre o `estado_json` existente (nunca substitui a linha
+ * inteira) e faz upsert. Nunca lança — sessão é memória auxiliar, uma falha
+ * aqui não pode derrubar a resposta ao cliente, que já foi decidida antes
+ * desta chamada. */
+async function mesclarEstado(ctx: ToolContext, patch: Partial<EstadoSessao>): Promise<void> {
+  const atual = await lerEstadoBruto(ctx);
+  const novoEstado: EstadoSessao = { ...atual, ...patch };
+
+  const { error } = await supabaseAdmin
+    .from("ia_sessoes")
+    .upsert(
+      {
+        empresa_id: ctx.empresaId,
+        atendimento_id: ctx.atendimentoId,
+        estado_json: novoEstado,
+      },
+      { onConflict: "atendimento_id" },
+    );
+
   if (error) {
-    // Sessão é memória auxiliar, não fonte de verdade — nunca derruba o
-    // atendimento por falha de leitura aqui, só segue sem contexto extra.
-    return null;
+    console.error("[ai-orchestrator] falha ao salvar ia_sessoes:", error);
   }
-  return (data?.estado_json as EstadoSessao | null) ?? null;
+}
+
+/** Pedido em construção desta conversa — nunca `null`: sem sessão/pedido
+ * salvo ainda, retorna o estado inicial vazio (ver `pedidoVazio()`), o
+ * mesmo estado que uma tool de carrinho (tarefa 0054) parte para montar o
+ * primeiro item. */
+export async function carregarPedidoEmConstrucao(ctx: ToolContext): Promise<OrderContext> {
+  const estado = await lerEstadoBruto(ctx);
+  return estado.pedido ?? pedidoVazio();
+}
+
+/** Persiste o Order Context desta conversa — usado pelas tools de carrinho
+ * (tarefa 0054) a cada mutação. Mescla sobre o `estado_json` existente
+ * (nunca sobrescreve `ultimo_produto_mencionado`). */
+export async function salvarPedidoEmConstrucao(ctx: ToolContext, pedido: OrderContext): Promise<void> {
+  await mesclarEstado(ctx, { pedido });
+}
+
+/** Ferramentas cujo resultado pode conter um produto/combo específico —
+ * ver tools/catalogo.ts (`ProdutoResumo` sempre tem `id`/`nome`). */
+const FERRAMENTAS_COM_PRODUTO = new Set(["buscar_produtos", "buscar_combos"]);
+
+export async function carregarSessao(ctx: ToolContext): Promise<EstadoSessao | null> {
+  const estado = await lerEstadoBruto(ctx);
+  return Object.keys(estado).length > 0 ? estado : null;
 }
 
 /** Deriva "último produto mencionado" das evidências reais desta rodada —
@@ -68,20 +115,5 @@ export async function atualizarSessaoComEvidencias(
   const produto = extrairUltimoProduto(evidencias);
   if (!produto) return;
 
-  const estado: EstadoSessao = { ultimo_produto_mencionado: produto };
-
-  const { error } = await supabaseAdmin
-    .from("ia_sessoes")
-    .upsert(
-      {
-        empresa_id: ctx.empresaId,
-        atendimento_id: ctx.atendimentoId,
-        estado_json: estado,
-      },
-      { onConflict: "atendimento_id" },
-    );
-
-  if (error) {
-    console.error("[ai-orchestrator] falha ao salvar ia_sessoes:", error);
-  }
+  await mesclarEstado(ctx, { ultimo_produto_mencionado: produto });
 }

@@ -12,8 +12,9 @@ import { z } from "zod";
 /** Toda ferramenta que a IA pode chamar — ver §5.6. Nomes em snake_case,
  * sem acento (mesma convenção do resto do domínio de negócio no código).
  * Espelha exatamente o check constraint de `ia_permissoes.ferramenta`
- * (supabase/migrations/0010_ia_permissoes.sql) — mudar aqui sem migrar o
- * banco quebra a validação. */
+ * (supabase/migrations/0010_ia_permissoes.sql, reescrito por migrations
+ * posteriores conforme novas ferramentas entram — ver 0013_carrinho_ferramentas.sql)
+ * — mudar aqui sem migrar o banco quebra a validação. */
 export const NOMES_FERRAMENTAS = [
   // catálogo
   "buscar_produtos",
@@ -32,6 +33,11 @@ export const NOMES_FERRAMENTAS = [
   "alterar_item",
   "cancelar_pedido",
   "consultar_status",
+  // carrinho (pedido em construção, antes de existir — ver ia_sessoes.estado_json.pedido)
+  "adicionar_ao_carrinho",
+  "remover_do_carrinho",
+  "atualizar_item_carrinho",
+  "consultar_carrinho",
   // operação
   "consultar_horario",
   "consultar_taxa",
