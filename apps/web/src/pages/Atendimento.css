@@ -1,0 +1,497 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.head-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.back-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.cust-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.head-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+.head-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+.status-pill svg {
+  width: 11px;
+  height: 11px;
+}
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: white;
+  background: var(--primary);
+  border: none;
+  border-radius: 7px;
+  padding: 8px 14px;
+}
+.btn-primary svg {
+  width: 13px;
+  height: 13px;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 65fr 35fr;
+  min-height: 0;
+}
+
+.convo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* Item de grid (filho de .body) sem min-height:0 cresce pra caber o
+     conteúdo inteiro em vez de respeitar a altura da track — é isso que
+     fazia o scroll aparecer na página inteira em vez de só em
+     .convo-scroll, mesmo com overflow-y:auto lá. */
+  min-height: 0;
+  border-right: 1px solid var(--border-soft);
+}
+.convo-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.msg-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 62%;
+}
+.msg-row.from-cliente {
+  align-self: flex-start;
+}
+.msg-row.from-ia,
+.msg-row.from-humano {
+  align-self: flex-end;
+}
+.msg-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.msg-tag svg {
+  width: 10px;
+  height: 10px;
+}
+.msg-row.from-cliente .msg-tag {
+  color: var(--text-3);
+}
+.msg-row.from-ia .msg-tag {
+  color: var(--ia);
+  justify-content: flex-end;
+}
+.msg-row.from-humano .msg-tag {
+  color: var(--blue);
+  justify-content: flex-end;
+}
+.msg-bubble {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 13px;
+  border-radius: 9px;
+}
+.msg-row.from-cliente .msg-bubble {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-top-left-radius: 3px;
+}
+.msg-row.from-ia .msg-bubble {
+  background: var(--ia-bg);
+  border: 1px solid var(--ia);
+  border-top-right-radius: 3px;
+}
+.msg-bubble-midia-falha {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 280px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber);
+}
+.msg-bubble-midia-falha svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--amber);
+  margin-top: 1px;
+}
+.msg-midia-falha-titulo {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--amber);
+}
+.msg-midia-falha-texto {
+  font-size: 11.5px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.msg-bubble-midia {
+  padding: 8px;
+  max-width: 260px;
+}
+.msg-bubble-midia img,
+.msg-bubble-midia video {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.msg-bubble-midia audio {
+  width: 100%;
+  display: block;
+}
+.msg-midia-arquivo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 10px;
+  background: var(--bg-raised);
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.msg-midia-legenda {
+  font-size: 12.5px;
+  padding: 6px 4px 0 4px;
+}
+.msg-midia-download {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 6px 4px 0 4px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+.msg-midia-download svg {
+  width: 12px;
+  height: 12px;
+}
+
+.msg-row.from-humano .msg-bubble {
+  background: var(--blue-bg);
+  border: 1px solid var(--blue);
+  border-top-right-radius: 3px;
+}
+.msg-time {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.msg-row.from-cliente .msg-time {
+  text-align: left;
+}
+.msg-row.from-ia .msg-time,
+.msg-row.from-humano .msg-time {
+  text-align: right;
+}
+
+.composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-soft);
+  padding: 14px 28px 18px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.composer-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.composer-hint svg {
+  width: 12px;
+  height: 12px;
+}
+.composer-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  padding: 8px 8px 8px 14px;
+}
+.composer-box input {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-1);
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+}
+.composer-box input::placeholder {
+  color: var(--text-3);
+}
+.send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.send-btn:disabled {
+  opacity: 0.5;
+}
+
+.ctx {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-raised);
+}
+.ctx-section {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.ctx-section:last-child {
+  border-bottom: none;
+}
+.ctx-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  margin-bottom: 12px;
+}
+
+.handoff-card {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber);
+  border-radius: 9px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.handoff-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--amber);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.handoff-head svg {
+  width: 14px;
+  height: 14px;
+}
+.handoff-row-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-2);
+}
+.handoff-row-val {
+  font-size: 12.5px;
+  color: var(--text-1);
+  line-height: 1.45;
+}
+.order-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.order-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  margin-bottom: 4px;
+}
+.order-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.btn-ghost {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  padding: 8px 14px;
+  background: transparent;
+}
+
+.handoff-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.prio-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--red);
+  background: var(--red-bg);
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.assumir-handoff-btn {
+  align-self: flex-start;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--amber);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+
+.cust-name {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.cust-phone {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 12px;
+}
+.kv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  padding: 5px 0;
+}
+.kv-row .k {
+  color: var(--text-3);
+}
+.kv-row .v {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.tag-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+
+.intent-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-1);
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  padding: 4px 9px;
+}

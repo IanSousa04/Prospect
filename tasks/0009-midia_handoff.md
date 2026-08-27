@@ -1,0 +1,7 @@
+# Cliente manda imagem/áudio → handoff em vez de silêncio
+
+**Status:** concluído
+**Prioridade:** P1
+**Seção no ROADMAP:** 1. Caminho crítico — confiabilidade da camada de IA (P0/P1)
+
+Implementado: `apps/whatsapp-worker/src/lib/media.ts` (baixa a mídia real via `message.downloadMedia()` e sobe pro bucket privado `midias-atendimento` no Supabase Storage), `lib/ingest.ts` (mídia entra em `metadata_json.midia`, legenda ou placeholder legível vira `conteudo`), `lib/handoff-midia.ts` (handoff estruturado local, mesmo contrato de `CriarHandoffSchema`, já que `criarHandoff` do ai-orchestrator não é importável do worker). `index.ts` agora verifica `message.hasMedia` ANTES do guard de texto vazio — corrigiu de brinde um bug real: imagem **com** legenda antes ingeria só o texto e descartava a imagem silenciosamente. Painel: `GET /atendimentos/:id/mensagens` (`apps/api/src/routes/mensagens.ts`) enriquece cada mensagem com `midia_url` (signed URL de 1h, gerada na hora, nunca persistida); `Atendimento.tsx` renderiza imagem/áudio/vídeo/documento com legenda e link de download. Também ganhou, junto (pedido explícito do usuário): novo `POST /atendimentos/:id/devolver-ia` (`apps/api/src/routes/atendimentos.ts`, mesmo padrão de `/assumir`) — muda status de volta pra `ia_atendendo` e resolve automaticamente qualquer handoff aberto/assumido, com botão correspondente no header de `Atendimento.tsx`. Build limpo nos 6 workspaces; ainda não testado visualmente ao vivo (sem acesso a credenciais de login).

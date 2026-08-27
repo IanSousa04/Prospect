@@ -1,0 +1,75 @@
+/* Design system light-only, quente/amigável — ver docs/ROADMAP.md §4 e o
+   plano da mudança (pesquisa: dark mode é dominante em ferramentas técnicas,
+   light mode é preferido em contexto de trabalho diurno por público
+   não-técnico, que é o público real deste painel — dono/atendente de
+   hamburgueria/pizzaria, não um time de engenharia). Todo valor abaixo foi
+   verificado contra WCAG real (luminância relativa via canvas no navegador,
+   não "no olho") antes de fechar — mesma técnica já usada na correção de
+   contraste anterior. */
+:root {
+  --bg: oklch(0.98 0.006 75);
+  --bg-raised: oklch(0.965 0.008 75);
+  --bg-card: oklch(0.945 0.01 75);
+  --bg-card-hover: oklch(0.92 0.012 75);
+  --border: oklch(0.82 0.012 75);
+  --border-soft: oklch(0.88 0.01 75);
+  --text-1: oklch(0.22 0.01 75);
+  --text-2: oklch(0.42 0.01 75);
+  --text-3: oklch(0.5 0.012 75);
+
+  /* Cor de marca — botão primário antes só invertia --text-1/--bg (preto
+     sobre branco), o que é "claro" mas não "colorido". Terracota/laranja
+     quente, associado a comida, sem copiar o vermelho do iFood (decisão já
+     registrada em docs/architecture/referencias-mercado.md). */
+  --primary: oklch(0.56 0.15 45);
+  --primary-hover: oklch(0.5 0.15 45);
+
+  /* Cores de status — mesmas famílias de matiz de antes (292 violeta, 70
+     âmbar, 25 vermelho, 250 azul, 260 neutro), invertidas pra fundo claro:
+     texto mais escuro/saturado, fundo bem claro. Mapeamento semântico
+     inalterado (ver components/statusMeta.tsx) — IA nunca vermelha,
+     vermelho só pro caso mais urgente (cliente pediu humano). */
+  --ia: oklch(0.5 0.14 292);
+  --ia-bg: oklch(0.94 0.03 292);
+  --amber: oklch(0.51 0.16 70);
+  --amber-bg: oklch(0.94 0.05 70);
+  --red: oklch(0.53 0.2 25);
+  --red-bg: oklch(0.94 0.04 25);
+  --blue: oklch(0.5 0.15 250);
+  --blue-bg: oklch(0.94 0.03 250);
+  --gray: oklch(0.48 0.012 260);
+  --gray-bg: oklch(0.92 0.008 260);
+
+  /* Scrim de modal — antes hardcoded em PedidoBuilder.css, tonalizado quente
+     pra combinar com o resto da paleta em vez de preto puro frio. */
+  --overlay: rgba(20, 15, 10, 0.45);
+
+  --font-ui: "Manrope", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
