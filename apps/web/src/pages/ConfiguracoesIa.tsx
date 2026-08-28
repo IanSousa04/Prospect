@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { ComportamentoJson, NomeFerramenta, NumeroWhitelist, TomDeVoz } from "@prospect/shared";
-import { TONS_DE_VOZ } from "@prospect/shared";
+import type { ComportamentoJson, NomeFerramenta, NumeroWhitelist, PrazoEntregaModo, TomDeVoz } from "@prospect/shared";
+import { PRAZO_ENTREGA_MODOS, TONS_DE_VOZ } from "@prospect/shared";
 import { api, type IaConfiguracaoResposta, type IaPermissaoOuPadrao } from "../lib/api.js";
 import Topbar from "../components/Topbar.js";
 import "./ConfiguracoesIa.css";
@@ -27,7 +27,10 @@ const GRUPOS: Array<{ titulo: string; ferramentas: NomeFerramenta[] }> = [
     titulo: "Pedido",
     ferramentas: ["consultar_pedido", "criar_pedido", "adicionar_item", "alterar_item", "cancelar_pedido", "consultar_status"],
   },
-  { titulo: "Operação", ferramentas: ["consultar_horario", "consultar_taxa", "consultar_regiao", "consultar_politica"] },
+  {
+    titulo: "Operação",
+    ferramentas: ["consultar_horario", "consultar_taxa", "consultar_regiao", "consultar_politica", "consultar_prazo_entrega"],
+  },
   { titulo: "Conhecimento", ferramentas: ["buscar_conhecimento"] },
 ];
 
@@ -58,6 +61,12 @@ const DESCRICOES: Partial<Record<NomeFerramenta, string>> = {
   consultar_regiao: "Consultar regiões de entrega cadastradas.",
   consultar_politica: "Consultar políticas gerais cadastradas.",
   buscar_conhecimento: "Buscar em FAQ/políticas por texto livre.",
+  consultar_prazo_entrega: "Responder 'quanto tempo demora meu pedido?' — texto fixo cadastrado ou cálculo real pela fila, conforme o modo configurado abaixo.",
+};
+
+const LABELS_PRAZO_ENTREGA_MODO: Record<PrazoEntregaModo, string> = {
+  padrao: "Texto fixo",
+  calculado: "Calculado pela fila",
 };
 
 const LABELS_TOM_DE_VOZ: Record<TomDeVoz, string> = {
@@ -288,6 +297,63 @@ export default function ConfiguracoesIa() {
               </div>
             </div>
           </div>
+        </section>
+
+        <section className="secao">
+          <div className="secao-titulo">Prazo de entrega</div>
+          <p className="secao-desc">
+            Como a IA responde "quanto tempo demora meu pedido?". {salvandoConfig && <span className="salvando-hint">salvando…</span>}
+          </p>
+
+          <div className="ferramenta-row">
+            <div className="ferramenta-top">
+              <div>
+                <div className="campo-label">Modo</div>
+                <div className="ferramenta-desc">
+                  Texto fixo: a IA sempre responde o valor cadastrado abaixo, nunca calcula. Calculado pela fila:
+                  soma o tempo de preparo (cadastrado por produto) dos pedidos ainda pendentes — exige a ferramenta
+                  "consultar_prazo_entrega" permitida abaixo.
+                </div>
+              </div>
+              <select
+                className="campo-select"
+                value={config.prazo_entrega_modo}
+                onChange={(e) => salvarConfig({ ...config, prazo_entrega_modo: e.target.value as PrazoEntregaModo })}
+              >
+                {PRAZO_ENTREGA_MODOS.map((m) => (
+                  <option key={m} value={m}>
+                    {LABELS_PRAZO_ENTREGA_MODO[m]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {config.prazo_entrega_modo === "padrao" && (
+            <div className="ferramenta-row">
+              <label className="campo-label" htmlFor="prazo-entrega-texto">
+                Texto do prazo
+              </label>
+              <input
+                id="prazo-entrega-texto"
+                className="campo-texto"
+                type="text"
+                placeholder="Ex.: 30-45 minutos"
+                defaultValue={config.prazo_entrega_texto ?? ""}
+                onBlur={(e) => salvarConfig({ ...config, prazo_entrega_texto: e.target.value.trim() || null })}
+              />
+            </div>
+          )}
+
+          {config.prazo_entrega_modo === "calculado" && (
+            <div className="ferramenta-row">
+              <div className="ferramenta-desc">
+                Cadastre o tempo de preparo de cada produto no catálogo — produto sem esse campo não entra no
+                cálculo. Não esqueça de permitir a ferramenta "consultar_prazo_entrega" na seção de permissões
+                abaixo.
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="secao">

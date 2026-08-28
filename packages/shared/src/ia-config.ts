@@ -49,6 +49,8 @@ export const NOMES_FERRAMENTAS = [
   "consultar_politica",
   // conhecimento
   "buscar_conhecimento",
+  // operação (calculado a partir da fila real, nunca inventado — ver tasks/0075)
+  "consultar_prazo_entrega",
 ] as const;
 
 export type NomeFerramenta = (typeof NOMES_FERRAMENTAS)[number];
@@ -72,6 +74,14 @@ export type ComportamentoJson = z.infer<typeof ComportamentoJsonSchema>;
 export const TONS_DE_VOZ = ["formal", "neutro", "amigavel", "descontraido"] as const;
 export type TomDeVoz = (typeof TONS_DE_VOZ)[number];
 
+/** Modo de resposta pra "quanto tempo demora meu pedido?" (tasks/0075).
+ * `padrao`: texto fixo cadastrado pela empresa, a IA nunca calcula.
+ * `calculado`: a tool `consultar_prazo_entrega` soma fila + tempo de preparo
+ * real dos produtos — só faz sentido com `tempo_preparo_minutos` cadastrado
+ * no catálogo. */
+export const PRAZO_ENTREGA_MODOS = ["padrao", "calculado"] as const;
+export type PrazoEntregaModo = (typeof PRAZO_ENTREGA_MODOS)[number];
+
 /** Corpo de `PUT /ia-configuracoes` — ver apps/api/src/routes/ia-configuracoes.ts
  * e docs/ROADMAP.md §1 "Fazer valer comportamento_json". `nome_assistente`
  * vazio (string em branco) normaliza pra null na rota — nunca salva string
@@ -82,6 +92,8 @@ export const AtualizarIaConfiguracaoSchema = z
     usa_emoji: z.boolean(),
     nome_assistente: z.string().trim().max(60).nullable(),
     comportamento_json: ComportamentoJsonSchema,
+    prazo_entrega_modo: z.enum(PRAZO_ENTREGA_MODOS),
+    prazo_entrega_texto: z.string().trim().max(120).nullable(),
   })
   .strict();
 

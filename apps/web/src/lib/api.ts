@@ -16,6 +16,7 @@ import type {
   NumeroWhitelist,
   Pedido,
   PedidoDetalhado,
+  PrazoEntregaModo,
   Produto,
   ProdutoDetalhado,
   ResumoPedidoIa,
@@ -326,6 +327,8 @@ export interface IaConfiguracaoResposta {
   usa_emoji: boolean;
   nome_assistente: string | null;
   comportamento_json: ComportamentoJson;
+  prazo_entrega_modo: PrazoEntregaModo;
+  prazo_entrega_texto: string | null;
 }
 
 export interface CriarPedidoBody {
@@ -360,5 +363,6 @@ export interface ProdutoFormBase {
   horario_fim: string | null;
   quantidade_minima: number;
   quantidade_maxima: number | null;
+  tempo_preparo_minutos: number | null;
   restricoes: string | null;
 }

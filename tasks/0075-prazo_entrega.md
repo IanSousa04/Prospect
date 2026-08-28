@@ -1,6 +1,6 @@
 # Tool `consultar_prazo_entrega` + config de prazo padrão vs. calculado
 
-**Status:** não iniciado
+**Status:** concluído — migration `0018_prazo_entrega.sql` (campo `produtos.tempo_preparo_minutos`, `ia_configuracoes.prazo_entrega_modo`/`prazo_entrega_texto`, tool no check constraint), tool `consultar_prazo_entrega` em `apps/ai-orchestrator/src/tools/prazo.ts` (cobre os dois modos: retorna o texto cadastrado em `padrao`, soma a fila em `calculado`), toggle em `ConfiguracoesIa.tsx` e campo de tempo de preparo em `ProdutoEditor.tsx`.
 **Prioridade:** P2
 **Seção no ROADMAP:** 3. Camada de IA — MVP 2 e além
 

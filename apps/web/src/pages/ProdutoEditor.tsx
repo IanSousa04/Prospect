@@ -61,6 +61,7 @@ const FORM_VAZIO: ProdutoFormBase = {
   horario_fim: null,
   quantidade_minima: 1,
   quantidade_maxima: null,
+  tempo_preparo_minutos: null,
   restricoes: null,
 };
 
@@ -103,6 +104,7 @@ export default function ProdutoEditor() {
           horario_fim: p.horario_fim,
           quantidade_minima: p.quantidade_minima,
           quantidade_maxima: p.quantidade_maxima,
+          tempo_preparo_minutos: p.tempo_preparo_minutos,
           restricoes: p.restricoes,
         });
         setIngredientes(p.ingredientes.map((i) => ({ nome: i.nome, alergeno: i.alergeno, ordem: i.ordem })));
@@ -438,6 +440,16 @@ export default function ProdutoEditor() {
                 type="number"
                 value={form.quantidade_maxima ?? ""}
                 onChange={(e) => set("quantidade_maxima", e.target.value ? Number(e.target.value) : null)}
+              />
+            </div>
+            <div className="field">
+              <label>Tempo de preparo (min)</label>
+              <input
+                type="number"
+                min={1}
+                value={form.tempo_preparo_minutos ?? ""}
+                placeholder="Ex.: 15"
+                onChange={(e) => set("tempo_preparo_minutos", e.target.value ? Number(e.target.value) : null)}
               />
             </div>
           </div>

@@ -7,6 +7,7 @@ import "./cliente.js";
 import "./pedido.js";
 import "./carrinho.js";
 import "./operacao.js";
+import "./prazo.js";
 
 export { executeTool, getToolDefinitionsForLlm, getToolsForEmpresa, getRiscoFerramenta, registerTool } from "./registry.js";
 export type { ToolContext, ToolDefinicao, ResultadoExecucaoTool } from "./registry.js";

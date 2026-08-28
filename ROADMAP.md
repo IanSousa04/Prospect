@@ -118,7 +118,7 @@ Depende do ciclo comercial mínimo (3.1) estar rodando: risco real na matriz de 
 Sem dependência forte do ciclo comercial — podem entrar em paralelo a qualquer momento. Itens já concluídos ficam registrados aqui por serem da mesma família (qualidade da resposta da IA).
 
 - [ ] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
-- [ ] **[P2] Tool `consultar_prazo_entrega` + config de prazo padrão vs. calculado (toggle na UI).** `SP: 5` ([detalhes](tasks/0075-prazo_entrega.md))
+- [x] **[P2] Tool `consultar_prazo_entrega` + config de prazo padrão vs. calculado (toggle na UI).** `SP: 5` ([detalhes](tasks/0075-prazo_entrega.md))
 - [x] **Agrupar mensagens rápidas do cliente antes de responder.** `SP: 3` ([detalhes](tasks/0030-agrupar_mensagens.md))
 - [x] **Formatação das respostas deve usar a sintaxe real do WhatsApp, não Markdown genérico.** `SP: 2` ([detalhes](tasks/0031-formatacao_whatsapp.md))
 - [ ] **[P2] Cache.** `SP: 5` ([detalhes](tasks/0025-cache.md))

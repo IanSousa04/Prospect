@@ -19,7 +19,7 @@ export async function iaConfiguracoesRoutes(app: FastifyInstance): Promise<void>
 
     const { data, error } = await supabaseAdmin
       .from("ia_configuracoes")
-      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json")
+      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, prazo_entrega_modo, prazo_entrega_texto")
       .eq("empresa_id", empresaId)
       .maybeSingle();
 
@@ -34,6 +34,8 @@ export async function iaConfiguracoesRoutes(app: FastifyInstance): Promise<void>
         usa_emoji: true,
         nome_assistente: null,
         comportamento_json: {},
+        prazo_entrega_modo: "padrao",
+        prazo_entrega_texto: null,
       }
     );
   });
@@ -55,10 +57,12 @@ export async function iaConfiguracoesRoutes(app: FastifyInstance): Promise<void>
           usa_emoji: body.usa_emoji,
           nome_assistente: body.nome_assistente?.trim() || null,
           comportamento_json: body.comportamento_json,
+          prazo_entrega_modo: body.prazo_entrega_modo,
+          prazo_entrega_texto: body.prazo_entrega_texto?.trim() || null,
         },
         { onConflict: "empresa_id" },
       )
-      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json")
+      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, prazo_entrega_modo, prazo_entrega_texto")
       .single();
 
     if (error) {

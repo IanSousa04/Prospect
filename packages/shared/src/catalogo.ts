@@ -37,6 +37,7 @@ export interface Produto {
   horario_fim: string | null;
   quantidade_minima: number;
   quantidade_maxima: number | null;
+  tempo_preparo_minutos: number | null;
 
   restricoes: string | null;
 
