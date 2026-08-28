@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type {
   AtendimentoComContexto,
@@ -285,6 +285,10 @@ export default function Atendimento() {
   const [produtoParaAdicionar, setProdutoParaAdicionar] = useState("");
   const [qtdParaAdicionar, setQtdParaAdicionar] = useState(1);
   const [enderecoForm, setEnderecoForm] = useState<EnderecoEntrega>({ rua: "", numero: "", bairro: "", cidade: "" });
+  // Último endereço vindo do backend (IA ou humano, tanto faz a origem) —
+  // usado só pra distinguir "o form ainda reflete a última sincronização"
+  // de "o humano alterou algo depois dela" (ver `carregar()` abaixo).
+  const ultimoEnderecoSincronizado = useRef<EnderecoEntrega | null>(null);
   const [mostrarPedidoBuilder, setMostrarPedidoBuilder] = useState(false);
   const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>({
     handoff: true,
@@ -310,12 +314,26 @@ export default function Atendimento() {
     setAtendimento(a);
     setMensagens(m);
     setCarrinhoIa(c);
-    // Só inicializa o form de endereço a partir do estado salvo — nunca
-    // sobrescreve o que o humano está digitando no meio de uma edição
-    // (ex.: realtime atualizando por causa de outra mudança da IA).
-    setEnderecoForm((atual) =>
-      atual.rua || atual.numero || atual.bairro || atual.cidade ? atual : c.endereco ?? atual,
-    );
+    // Só sobrescreve o form de endereço se ele ainda estiver exatamente
+    // como a última sincronização deixou — nunca apaga uma edição humana em
+    // andamento (ex.: realtime atualizando por causa de outra mudança da
+    // IA), mas também nunca trava numa sincronização antiga só porque o
+    // form já tinha ALGUM valor (bug real: uma vez preenchido pela IA, uma
+    // correção posterior de endereço pelo cliente nunca aparecia na UI).
+    setEnderecoForm((atual) => {
+      const anterior = ultimoEnderecoSincronizado.current;
+      const enderecoVazio = !(atual.rua || atual.numero || atual.bairro || atual.cidade);
+      const igualAoUltimoSincronizado =
+        anterior != null &&
+        atual.rua === anterior.rua &&
+        atual.numero === anterior.numero &&
+        atual.bairro === anterior.bairro &&
+        atual.cidade === anterior.cidade &&
+        (atual.complemento ?? "") === (anterior.complemento ?? "") &&
+        (atual.referencia ?? "") === (anterior.referencia ?? "");
+      return enderecoVazio || igualAoUltimoSincronizado ? c.endereco ?? atual : atual;
+    });
+    ultimoEnderecoSincronizado.current = c.endereco ?? null;
     if (a.pedido_aberto) {
       api.buscarPedido(a.pedido_aberto.id).then(setPedido);
     } else {

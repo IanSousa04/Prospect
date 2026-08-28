@@ -1,6 +1,6 @@
 # Ferramentas de operação — confirmar cobertura completa
 
-**Status:** pendente
+**Status:** concluído — auditado: as 5 ferramentas (`consultar_horario`, `consultar_taxa`, `consultar_regiao`, `consultar_politica` em `apps/ai-orchestrator/src/tools/operacao.ts`, `buscar_conhecimento` em `conhecimento.ts`) já tinham executor real registrado via `registerTool`, escopado por `empresa_id` e passando pelo gate único de permissão (`executeTool`). Nenhuma ficou só como nome no enum — nada a implementar.
 **Prioridade:** P2
 **Seção no ROADMAP:** 3. Camada de IA — MVP 2 e além
 

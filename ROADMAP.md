@@ -101,7 +101,11 @@ Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** um
 - [x] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
 - [x] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
 - [x] **[P1] Confirmação explícita do pedido + criação real em `pedidos`/`itens_pedido`.** `SP: 3` ([detalhes](tasks/0055-confirmacao_criacao_pedido.md))
+- [x] **[P1] Bug: endereço não atualiza na UI quando o cliente informa/corrige pelo WhatsApp.** `SP: 2` ([detalhes](tasks/0076-endereco_nao_atualiza_ui.md))
 - [ ] **[P2] Motor genérico de etapas configurável por empresa (stretch, além do escopo mínimo acima).** `SP: 5` ([detalhes](tasks/0056-motor_generico_etapas.md))
+- [ ] **[P2] Opções de entrega (retirada/entrega) configuráveis por empresa.** `SP: 3` ([detalhes](tasks/0077-opcoes_entrega_configuraveis.md))
+- [ ] **[P2] Formas de pagamento configuráveis por empresa + deixar claro pra IA que o pagamento é feito ao entregador, nunca pela plataforma.** `SP: 5` ([detalhes](tasks/0078-formas_pagamento_configuraveis.md))
+- [ ] **[P2] Verificar endereço informado via API simples e gratuita, questionando o cliente se não encontrar.** `SP: 3` ([detalhes](tasks/0079-verificacao_endereco_api.md))
 
 ### 3.2 Hardening da camada de escrita — P2
 
@@ -117,7 +121,7 @@ Depende do ciclo comercial mínimo (3.1) estar rodando: risco real na matriz de 
 
 Sem dependência forte do ciclo comercial — podem entrar em paralelo a qualquer momento. Itens já concluídos ficam registrados aqui por serem da mesma família (qualidade da resposta da IA).
 
-- [ ] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
+- [x] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
 - [x] **[P2] Tool `consultar_prazo_entrega` + config de prazo padrão vs. calculado (toggle na UI).** `SP: 5` ([detalhes](tasks/0075-prazo_entrega.md))
 - [x] **Agrupar mensagens rápidas do cliente antes de responder.** `SP: 3` ([detalhes](tasks/0030-agrupar_mensagens.md))
 - [x] **Formatação das respostas deve usar a sintaxe real do WhatsApp, não Markdown genérico.** `SP: 2` ([detalhes](tasks/0031-formatacao_whatsapp.md))
@@ -127,6 +131,8 @@ Sem dependência forte do ciclo comercial — podem entrar em paralelo a qualque
 ### 3.4 Infraestrutura, configuração e canal WhatsApp — P2
 
 Independente do ciclo comercial. Ordem sugerida: topologia do orchestrator antes do `.env` porque `EMPRESA_ID` só some de vez quando a topologia muda; a trilha do WhatsApp oficial (monitorar → avaliar provedores → migrar) é sequencial por natureza e pode rodar em paralelo às outras duas.
+
+**Nota do usuário (2026-08-28):** a migração de verdade para a API oficial (tarefa 0062) é deliberadamente a ÚLTIMA tarefa do roadmap inteiro — não só desta seção. Monitorar risco (0060) e avaliar provedores (0061) podem avançar normalmente, mas não execute 0062 antes de esgotar todo o resto do roadmap.
 
 - [x] **Modo teste com whitelist de números.** `SP: 2` ([detalhes](tasks/0028-modo_teste_whitelist.md))
 - [ ] **[P2] Topologia de processos do `ai-orchestrator` — migrar de "1 processo por empresa" para "1 processo compartilhado".** `SP: 8` ([detalhes](tasks/0024-topologia_orchestrator.md))
