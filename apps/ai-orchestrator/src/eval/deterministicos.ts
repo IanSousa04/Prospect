@@ -9,7 +9,9 @@ import {
   contemPromessaNaoSuportada,
   contemProdutoNaoVerificado,
   pedeCodigoDePedido,
+  contemConfirmacaoDePedidoNaoVerificada,
 } from "../agent/verificacao.js";
+import { mensagemDePedidoConfirmado } from "../agent/confirmacao-pedido.js";
 import { pedeIdentidade, mensagemDeIdentidade, clientePediuHumano } from "../agent/deteccao.js";
 import {
   contemPromptInjection,
@@ -19,8 +21,17 @@ import {
   detectarCopiaLiteralDeInjection,
 } from "../agent/sanitizacao-prompt-injection.js";
 import type { EvidenciaColetada } from "../agent/investigador.js";
-import { sintetizarAfirmacaoDeMutacaoCarrinho, sintetizarAfirmacaoDePedidoCriado } from "../agent/investigador.js";
-import { avaliarRiscoCriarPedido } from "@prospect/shared";
+import {
+  sintetizarAfirmacaoDeMutacaoCarrinho,
+  sintetizarAfirmacaoDePedidoCriado,
+  sintetizarAfirmacaoDePedidoIncompleto,
+  sintetizarAfirmacaoDeConfirmacaoExpirada,
+  garantirAmbiguidadeQuandoSemFatoNemSinal,
+  sintetizarAfirmacoesDeResultadoVazio,
+  filtrarAfirmacoesComerciaisSemFonte,
+} from "../agent/investigador.js";
+import { avaliarRiscoCriarPedido, avaliarRiscoAcao, filtrarCamposPermitidos } from "@prospect/shared";
+import { calcularRiscoMaximo } from "../agent/orquestrador.js";
 import type { RelatorioInvestigacao } from "../agent/types.js";
 import {
   pedidoVazio,
@@ -28,6 +39,8 @@ import {
   calcularSubtotal,
   aplicarMutacaoCarrinho,
   encontrarLinhaEquivalente,
+  calcularHashConfirmacao,
+  construirResumoTexto,
   type ItemCarrinho,
   type InformacaoPendente,
 } from "../agent/pedido-contexto.js";
@@ -131,6 +144,32 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
     },
   },
   {
+    nome: "episódio real: soma de dois valores reais (produto + adicional) sem ter chamado 'consultar_carrinho' não é bloqueada como inventada",
+    rodar: () => {
+      // Reproduz o handoff real: Atendente respondeu "o adicional de ovo é
+      // R$ 4,00, aí fica R$ 36,90 no total" (X-Bacon R$ 32,90 + ovo R$ 4,00)
+      // antes do cliente confirmar adicionar ao carrinho — os dois valores
+      // de origem são reais (evidência desta rodada), só a SOMA nunca
+      // aparece literalmente em nenhum campo isolado.
+      const evidenciasComAdicional: EvidenciaColetada[] = [
+        ...EVIDENCIAS_CATALOGO,
+        { execucaoId: "eval-adicional-1", toolNome: "buscar_adicionais", output: { resultados: [{ id: "ov1", nome: "Ovo", preco_adicional: 4.0 }] } },
+      ];
+      const bloqueado = contemValorNaoVerificado(
+        "O adicional de ovo é R$ 4,00, aí fica R$ 36,90 no total.",
+        evidenciasComAdicional,
+      );
+      return bloqueado === false ? null : "soma de dois valores reais (32,90 + 4,00) foi bloqueada como se fosse inventada (falso positivo)";
+    },
+  },
+  {
+    nome: "valor que não é nem um preço real nem a soma de até 3 valores reais continua bloqueado (a permissividade de soma não abre brecha geral)",
+    rodar: () => {
+      const bloqueado = contemValorNaoVerificado("Fica R$ 500,00 no total.", EVIDENCIAS_CATALOGO);
+      return bloqueado === true ? null : "valor muito acima de qualquer combinação real passou (falso negativo)";
+    },
+  },
+  {
     nome: "nome de produto real em negrito não é bloqueado",
     rodar: () => {
       const bloqueado = contemProdutoNaoVerificado("Temos o *X-Bacon* disponível!", EVIDENCIAS_CATALOGO);
@@ -212,6 +251,69 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
     rodar: () => {
       const bloqueado = pedeCodigoDePedido("Seu pedido já foi confirmado, o total é R$ 20,00.");
       return bloqueado === false ? null : "falso positivo: confirmação de pedido tratada como pedido de código";
+    },
+  },
+  {
+    nome: "afirmar pedido confirmado sem criar_pedido bem-sucedido é bloqueado (episódio real: IA confirmou pedido sem ter perguntado entrega/pagamento)",
+    rodar: () => {
+      const bloqueado = contemConfirmacaoDePedidoNaoVerificada(
+        "Perfeito! Seu pedido de *X-Bacon* (R$ 32,90) já está confirmado e vai pra cozinha. 🍔",
+        [{ execucaoId: "eval-carrinho-1", toolNome: "consultar_carrinho", output: { itens: [{ nome_produto: "X-Bacon" }], subtotal: 32.9 } }],
+      );
+      return bloqueado === true ? null : "confirmação de pedido sem evidência real de criar_pedido não foi bloqueada";
+    },
+  },
+  {
+    nome: "afirmar pedido confirmado COM criar_pedido bem-sucedido não é bloqueado (falso positivo)",
+    rodar: () => {
+      const bloqueado = contemConfirmacaoDePedidoNaoVerificada(
+        "Perfeito! Seu pedido de *X-Bacon* (R$ 32,90) já está confirmado e vai pra cozinha. 🍔",
+        [{ execucaoId: "eval-criar-1", toolNome: "criar_pedido", output: { pedido_criado: true, pedido_id: "abc", total: 32.9 } }],
+      );
+      return bloqueado === false ? null : "confirmação de pedido com criar_pedido real foi bloqueada por engano (falso positivo)";
+    },
+  },
+  {
+    nome: "pergunta pedindo confirmação ('pode confirmar?') não é bloqueada como afirmação de pedido criado",
+    rodar: () => {
+      const bloqueado = contemConfirmacaoDePedidoNaoVerificada(
+        "Fechou! Seu pedido é *X-Bacon* - R$ 32,90. Confirma pra eu enviar pra cozinha?",
+        [{ execucaoId: "eval-carrinho-2", toolNome: "consultar_carrinho", output: { itens: [{ nome_produto: "X-Bacon" }], subtotal: 32.9 } }],
+      );
+      return bloqueado === false ? null : "falso positivo: pergunta legítima de confirmação foi tratada como afirmação de pedido criado";
+    },
+  },
+  {
+    nome: "mensagemDePedidoConfirmado nunca inclui item fora do resumo recebido (entrega + pix)",
+    rodar: () => {
+      const texto = mensagemDePedidoConfirmado(
+        {
+          itens: [{ nome_produto: "X-Bacon", quantidade: 1 }],
+          total: 32.9,
+          tipo_entrega: "entrega",
+          endereco: { rua: "Rua A", numero: "123", bairro: "Centro", cidade: "São Paulo" },
+          forma_pagamento: "pix",
+        },
+        false,
+      );
+      if (!texto.includes("*X-Bacon*")) return "não incluiu o item real";
+      if (!texto.includes("32,90")) return "não incluiu o total real";
+      if (!texto.includes("Rua A, 123")) return "não incluiu o endereço real";
+      if (!/pix/i.test(texto)) return "não incluiu a forma de pagamento real";
+      if (/batata|coca|milkshake/i.test(texto)) return "incluiu item que não estava no resumo (invenção)";
+      return null;
+    },
+  },
+  {
+    nome: "mensagemDePedidoConfirmado pra retirada nunca menciona endereço (não existe pra retirada)",
+    rodar: () => {
+      const texto = mensagemDePedidoConfirmado(
+        { itens: [{ nome_produto: "X-Bacon", quantidade: 2 }], total: 65.8, tipo_entrega: "retirada", endereco: null, forma_pagamento: "dinheiro" },
+        false,
+      );
+      if (!/retirada/i.test(texto)) return "não indicou que é retirada";
+      if (/rua|bairro|entrega em:/i.test(texto)) return "mencionou endereço numa retirada (não deveria existir)";
+      return null;
     },
   },
   {
@@ -859,6 +961,415 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
       ];
       const resultado = sintetizarAfirmacaoDePedidoCriado(relatorioAmbiguo, evidencias);
       return resultado === relatorioAmbiguo ? null : "sintetizou afirmação de pedido criado mesmo com a criação tendo sido bloqueada";
+    },
+  },
+
+  // ============================================================================
+  // Redes de segurança contra handoff silencioso (episódios reais da
+  // simulação de personas — ver tasks/0073-simulacao_personas_atendimento.md)
+  // ============================================================================
+
+  {
+    nome: "episódio real: 'criar_pedido' recusado por pedido incompleto nunca vira handoff silencioso — vira afirmação dizendo o que falta",
+    rodar: () => {
+      // Reproduz o handoff real: cliente mandou endereço + forma de
+      // pagamento + 'confirma logo' num turno só, 'criar_pedido' recusou
+      // por faltar algo, e sem essa rede o relatório ficava sem nenhuma
+      // afirmação (confiança baixa → handoff mudo, carrinho abandonado).
+      const relatorioSemAfirmacoes: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-pedido-incompleto-1",
+          toolNome: "criar_pedido",
+          output: { erro: "pedido_incompleto", pendencias: ["forma_pagamento"] },
+        },
+      ];
+      const resultado = sintetizarAfirmacaoDePedidoIncompleto(relatorioSemAfirmacoes, evidencias);
+      if (resultado.afirmacoes.length !== 1) return `esperado 1 afirmação sintética, obtido ${resultado.afirmacoes.length}`;
+      const afirmacao = resultado.afirmacoes[0]!;
+      if (afirmacao.fonte_tool_execucao_id !== "eval-pedido-incompleto-1") return "não citou a execução real como fonte";
+      if (!afirmacao.texto.toLowerCase().includes("forma de pagamento")) {
+        return `texto não descreve a pendência real: "${afirmacao.texto}"`;
+      }
+      return null;
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDePedidoIncompleto não mexe no relatório quando 'criar_pedido' não foi recusado por incompleto",
+    rodar: () => {
+      const relatorioSemAfirmacoes: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "eval-consulta-x", toolNome: "consultar_carrinho", output: { itens: [{ nome_produto: "X" }] } },
+      ];
+      const resultado = sintetizarAfirmacaoDePedidoIncompleto(relatorioSemAfirmacoes, evidencias);
+      return resultado === relatorioSemAfirmacoes ? null : "mexeu no relatório sem nenhuma recusa de 'criar_pedido' por incompleto";
+    },
+  },
+  {
+    nome: "episódio real: ambiguidade de produto ('x-salada ou x-tudo?') com zero afirmações nunca vira handoff silencioso — vira pedir_esclarecimento",
+    rodar: () => {
+      // Reproduz o handoff real: cliente confuso perguntou sobre um
+      // produto ambíguo, o relatório final ficou sem afirmações e sem
+      // ambiguidade marcada (o modelo esqueceu de sinalizar) — sem essa
+      // rede, confianca.ts tratava isso como confiança baixa → handoff
+      // mudo, em vez de pedir_esclarecimento (que já existe pra isso).
+      const relatorioSemSinal: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 2,
+      };
+      const resultado = garantirAmbiguidadeQuandoSemFatoNemSinal(relatorioSemSinal);
+      return resultado.ambiguidade.tipo === "informacao_insuficiente"
+        ? null
+        : `esperado ambiguidade "informacao_insuficiente", obtido "${resultado.ambiguidade.tipo}"`;
+    },
+  },
+  {
+    nome: "garantirAmbiguidadeQuandoSemFatoNemSinal não mexe quando já existe afirmação, ambiguidade própria, ou nenhuma ferramenta foi chamada",
+    rodar: () => {
+      const comAfirmacao: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [{ texto: "X", tipo: "generico", fonte_tool: "buscar_produtos", fonte_tool_execucao_id: "x1" }],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      if (garantirAmbiguidadeQuandoSemFatoNemSinal(comAfirmacao) !== comAfirmacao) return "mexeu num relatório que já tinha afirmação";
+
+      const comAmbiguidadePropria: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "multiplos_candidatos" },
+        ferramentasChamadas: 1,
+      };
+      if (garantirAmbiguidadeQuandoSemFatoNemSinal(comAmbiguidadePropria) !== comAmbiguidadePropria) {
+        return "mexeu num relatório que já tinha ambiguidade própria marcada";
+      }
+
+      const semFerramentaChamada: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 0,
+      };
+      return garantirAmbiguidadeQuandoSemFatoNemSinal(semFerramentaChamada) === semFerramentaChamada
+        ? null
+        : "mexeu num relatório social/sem investigação de ferramentas (deve continuar 'alta' por confianca.ts, não virar esclarecimento)";
+    },
+  },
+  {
+    nome: "episódio real: afirmação já escrita pelo LLM com fraseado técnico ('não encontrada nos resultados') é substituída pela frase natural determinística",
+    rodar: () => {
+      const relatorioComFraseTecnica: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [
+          {
+            texto: "Pizza grande de calabresa não encontrada nos resultados, possivelmente está indisponível ou não cadastrada.",
+            tipo: "generico",
+            fonte_tool: "buscar_produtos",
+            fonte_tool_execucao_id: "eval-busca-vazia-1",
+          },
+        ],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "eval-busca-vazia-1", toolNome: "buscar_produtos", output: { resultados: [] } },
+      ];
+      const resultado = sintetizarAfirmacoesDeResultadoVazio(relatorioComFraseTecnica, evidencias);
+      const afirmacao = resultado.afirmacoes[0]!;
+      if (/não encontrada nos resultados|não cadastrada/i.test(afirmacao.texto)) {
+        return `fraseado técnico não foi substituído: "${afirmacao.texto}"`;
+      }
+      return afirmacao.texto === "A busca não encontrou nenhum produto correspondente." ? null : `texto inesperado: "${afirmacao.texto}"`;
+    },
+  },
+
+  // ============================================================================
+  // Matriz de risco genérica pra tools de escrita (tarefa 0023)
+  // ============================================================================
+
+  {
+    nome: "avaliarRiscoAcao: bloqueia por 'status_permitidos' quando o status atual não está na lista configurada",
+    rodar: () => {
+      const risco = avaliarRiscoAcao({
+        permissao: { exige_confirmacao_humana: false, valor_maximo_sem_handoff: null, condicoes_json: { status_permitidos: ["aberto", "confirmado"] } },
+        statusAtual: "entregue",
+      });
+      return risco.bloqueado === true && risco.motivo === "status_pedido_nao_permitido"
+        ? null
+        : `esperado bloqueado por status não permitido, obtido ${JSON.stringify(risco)}`;
+    },
+  },
+  {
+    nome: "avaliarRiscoAcao: permite quando o status atual está na lista configurada",
+    rodar: () => {
+      const risco = avaliarRiscoAcao({
+        permissao: { exige_confirmacao_humana: false, valor_maximo_sem_handoff: null, condicoes_json: { status_permitidos: ["aberto", "confirmado"] } },
+        statusAtual: "confirmado",
+      });
+      return risco.bloqueado === false ? null : `esperado permitido (status na lista), obtido ${JSON.stringify(risco)}`;
+    },
+  },
+  {
+    nome: "avaliarRiscoAcao: sem 'condicoes_json' configurado, nunca bloqueia por status (permissivo por padrão)",
+    rodar: () => {
+      const risco = avaliarRiscoAcao({
+        permissao: { exige_confirmacao_humana: false, valor_maximo_sem_handoff: null, condicoes_json: null },
+        statusAtual: "entregue",
+      });
+      return risco.bloqueado === false ? null : `bloqueou sem nenhuma configuração de status_permitidos, obtido ${JSON.stringify(risco)}`;
+    },
+  },
+  {
+    nome: "avaliarRiscoAcao: tool sem conceito de valor/status (ex.: atualizar_cliente) não é afetada pelas checagens que não recebeu",
+    rodar: () => {
+      const risco = avaliarRiscoAcao({
+        permissao: { exige_confirmacao_humana: false, valor_maximo_sem_handoff: 50, condicoes_json: { status_permitidos: ["aberto"] } },
+      });
+      return risco.bloqueado === false
+        ? null
+        : `bloqueou sem valorFinanceiro/statusAtual informados (a tool não passou esses parâmetros), obtido ${JSON.stringify(risco)}`;
+    },
+  },
+  {
+    nome: "filtrarCamposPermitidos: bloqueia campo fora da lista configurada",
+    rodar: () => {
+      const resultado = filtrarCamposPermitidos(["nome", "telefone"], ["nome"]);
+      return resultado.permitido === false && resultado.camposNegados.includes("telefone")
+        ? null
+        : `esperado bloqueado com 'telefone' negado, obtido ${JSON.stringify(resultado)}`;
+    },
+  },
+  {
+    nome: "filtrarCamposPermitidos: permite todos os campos quando 'campos_permitidos' é null (permissivo por padrão)",
+    rodar: () => {
+      const resultado = filtrarCamposPermitidos(["nome", "telefone"], null);
+      return resultado.permitido === true && resultado.camposNegados.length === 0
+        ? null
+        : `esperado permitido sem nenhuma configuração, obtido ${JSON.stringify(resultado)}`;
+    },
+  },
+  {
+    nome: "avaliarRiscoCriarPedido continua com o mesmo comportamento de antes (regressão pós-generalização pra avaliarRiscoAcao)",
+    rodar: () => {
+      const semConfig = avaliarRiscoCriarPedido(undefined, 100);
+      if (semConfig.bloqueado !== false) return "sem configuração deveria continuar permissivo";
+      const exigeConfirmacao = avaliarRiscoCriarPedido({ exige_confirmacao_humana: true, valor_maximo_sem_handoff: null }, 10);
+      if (exigeConfirmacao.bloqueado !== true || exigeConfirmacao.motivo !== "empresa_exige_confirmacao_humana") {
+        return `esperado bloqueado por exigência da empresa, obtido ${JSON.stringify(exigeConfirmacao)}`;
+      }
+      const acimaDoLimite = avaliarRiscoCriarPedido({ exige_confirmacao_humana: false, valor_maximo_sem_handoff: 50 }, 51);
+      if (acimaDoLimite.bloqueado !== true || acimaDoLimite.motivo !== "valor_acima_do_limite_sem_handoff") {
+        return `esperado bloqueado por valor acima do limite, obtido ${JSON.stringify(acimaDoLimite)}`;
+      }
+      return null;
+    },
+  },
+  {
+    nome: "calcularRiscoMaximo: retorna 'alto' quando há uma evidência de 'criar_pedido' (risco declarado alto) entre várias de risco baixo",
+    rodar: () => {
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "e1", toolNome: "buscar_produtos", output: {} },
+        { execucaoId: "e2", toolNome: "consultar_carrinho", output: {} },
+        { execucaoId: "e3", toolNome: "criar_pedido", output: { pedido_criado: true, pedido_id: "p1", total: 10 } },
+      ];
+      return calcularRiscoMaximo(evidencias) === "alto" ? null : `esperado "alto", obtido "${calcularRiscoMaximo(evidencias)}"`;
+    },
+  },
+  {
+    nome: "calcularRiscoMaximo: retorna 'baixo' quando nenhuma evidência de risco maior foi chamada",
+    rodar: () => {
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "e1", toolNome: "buscar_produtos", output: {} },
+        { execucaoId: "e2", toolNome: "consultar_carrinho", output: {} },
+      ];
+      return calcularRiscoMaximo(evidencias) === "baixo" ? null : `esperado "baixo", obtido "${calcularRiscoMaximo(evidencias)}"`;
+    },
+  },
+  {
+    nome: "calcularRiscoMaximo: lista vazia de evidências é 'baixo' (nenhuma tool chamada)",
+    rodar: () => (calcularRiscoMaximo([]) === "baixo" ? null : `esperado "baixo", obtido "${calcularRiscoMaximo([])}"`),
+  },
+
+  // ============================================================================
+  // Confirmação estruturada com hash+expiração (tarefa 0022)
+  // ============================================================================
+
+  {
+    nome: "calcularHashConfirmacao: mesmo pedido produz o mesmo hash (determinístico)",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] };
+      const pedido = { ...pedidoVazio(), itens: [item], tipo_entrega: "retirada" as const, forma_pagamento: "pix" as const };
+      const hash1 = calcularHashConfirmacao(pedido);
+      const hash2 = calcularHashConfirmacao(pedido);
+      return hash1 === hash2 ? null : `hash não foi determinístico: "${hash1}" != "${hash2}"`;
+    },
+  },
+  {
+    nome: "calcularHashConfirmacao: episódio real — qualquer mudança no carrinho (quantidade, item, entrega, pagamento) muda o hash, invalidando confirmação anterior",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] };
+      const base = { ...pedidoVazio(), itens: [item], tipo_entrega: "retirada" as const, forma_pagamento: "pix" as const };
+      const hashBase = calcularHashConfirmacao(base);
+
+      const comMaisQuantidade = calcularHashConfirmacao({ ...base, itens: [{ ...item, quantidade: 2 }] });
+      if (comMaisQuantidade === hashBase) return "mudar a quantidade não mudou o hash";
+
+      const comOutroPagamento = calcularHashConfirmacao({ ...base, forma_pagamento: "dinheiro" });
+      if (comOutroPagamento === hashBase) return "mudar a forma de pagamento não mudou o hash";
+
+      const comOutraEntrega = calcularHashConfirmacao({ ...base, tipo_entrega: "entrega" });
+      if (comOutraEntrega === hashBase) return "mudar o tipo de entrega não mudou o hash";
+
+      return null;
+    },
+  },
+  {
+    nome: "calcularHashConfirmacao: ordem diferente dos itens no array não muda o hash (mesmo conteúdo, ordem de fetch pode variar)",
+    rodar: () => {
+      const item1: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] };
+      const item2: ItemCarrinho = { produto_id: "p2", linha_id: "l2", nome_produto: "Coca-Cola", preco_unitario: 6.9, quantidade: 1, observacoes: null, opcoes: [] };
+      const ordemA = calcularHashConfirmacao({ ...pedidoVazio(), itens: [item1, item2] });
+      const ordemB = calcularHashConfirmacao({ ...pedidoVazio(), itens: [item2, item1] });
+      return ordemA === ordemB ? null : "ordem diferente dos mesmos itens produziu hashes diferentes (falso positivo de mudança)";
+    },
+  },
+  {
+    nome: "construirResumoTexto: carrinho vazio nunca inventa itens",
+    rodar: () => (construirResumoTexto(pedidoVazio()) === "Carrinho vazio." ? null : `esperado "Carrinho vazio.", obtido "${construirResumoTexto(pedidoVazio())}"`),
+  },
+  {
+    nome: "construirResumoTexto: lista itens reais e o subtotal real, nunca um valor inventado",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 2, observacoes: null, opcoes: [] };
+      const texto = construirResumoTexto({ ...pedidoVazio(), itens: [item] });
+      return texto.includes("2x X-Bacon") && texto.includes("65,80") ? null : `texto não reflete o pedido real: "${texto}"`;
+    },
+  },
+  {
+    nome: "episódio real: 'criar_pedido' recusado por confirmação expirada/inválida nunca vira handoff silencioso — vira afirmação pedindo pra reconfirmar com o carrinho fresco",
+    rodar: () => {
+      // Reproduz o cenário que a tarefa 0022 resolve: o cliente demorou
+      // (ou mudou o carrinho) entre ver o resumo e responder "confirma" —
+      // "criar_pedido" recusa por hash não bater/expirado, e sem essa rede
+      // o relatório ficava sem afirmação nenhuma (confiança baixa → handoff
+      // mudo), igual ao episódio real de "pedido_incompleto".
+      const relatorioSemAfirmacoes: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 2,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        {
+          execucaoId: "eval-carrinho-fresco-1",
+          toolNome: "consultar_carrinho",
+          output: {
+            itens: [{ linha_id: "l1", produto_id: "p1", nome_produto: "X-Bacon", preco_unitario: 32.9, quantidade: 1, observacoes: null, opcoes: [] }],
+            subtotal: 32.9,
+          },
+        },
+        {
+          execucaoId: "eval-confirmacao-expirada-1",
+          toolNome: "criar_pedido",
+          output: { erro: "confirmacao_expirada_ou_invalida" },
+        },
+      ];
+      const resultado = sintetizarAfirmacaoDeConfirmacaoExpirada(relatorioSemAfirmacoes, evidencias);
+      if (resultado.ambiguidade.tipo !== "nenhuma") return "ambiguidade não foi limpa — o Atendente ainda poderia ficar em silêncio";
+      if (resultado.afirmacoes.length !== 2) return `esperado 2 afirmações (explicação + carrinho fresco), obtido ${resultado.afirmacoes.length}`;
+      if (!resultado.afirmacoes.some((a) => a.texto.includes("X-Bacon") && a.texto.includes("32,90"))) {
+        return `nenhuma afirmação reflete o carrinho fresco real: ${JSON.stringify(resultado.afirmacoes)}`;
+      }
+      return null;
+    },
+  },
+  {
+    nome: "sintetizarAfirmacaoDeConfirmacaoExpirada não mexe no relatório quando 'criar_pedido' não foi recusado por esse motivo",
+    rodar: () => {
+      const relatorioSemAfirmacoes: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "eval-x", toolNome: "criar_pedido", output: { erro: "pedido_incompleto", pendencias: ["forma_pagamento"] } },
+      ];
+      const resultado = sintetizarAfirmacaoDeConfirmacaoExpirada(relatorioSemAfirmacoes, evidencias);
+      return resultado === relatorioSemAfirmacoes ? null : "mexeu no relatório sem nenhuma recusa por confirmação expirada/inválida";
+    },
+  },
+
+  // ============================================================================
+  // Filtragem de afirmação comercial especulativa sem fonte (tarefa 0073,
+  // achado da simulação de personas — nunca mais handoff mudo por causa de
+  // UMA afirmação ruim quando outras da mesma rodada são reais)
+  // ============================================================================
+
+  {
+    nome: "episódio real: subtotal especulativo sem 'consultar_carrinho'/'adicionar_ao_carrinho' desta rodada é descartado, nunca derruba a rodada inteira",
+    rodar: () => {
+      // Reproduz o episódio real: cliente descreveu um pedido grande numa
+      // única mensagem, o relatório citou um subtotal calculado de cabeça
+      // (tipo "preco", sem fonte_tool_execucao_id de verdade) JUNTO com uma
+      // afirmação real e verificada (ex.: resposta sobre disponibilidade de
+      // pizza, com fonte real) — antes desta rede, a afirmação especulativa
+      // sozinha derrubava a rodada inteira pra confiança baixa → handoff.
+      const relatorioMisto: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [
+          { texto: "Não há pizza de calabresa no cardápio.", tipo: "disponibilidade", fonte_tool: "buscar_produtos", fonte_tool_execucao_id: "eval-real-1" },
+          { texto: "Seu pedido fica R$ 87,60 no total.", tipo: "preco", fonte_tool: null, fonte_tool_execucao_id: null },
+        ],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const resultado = filtrarAfirmacoesComerciaisSemFonte(relatorioMisto);
+      if (resultado.afirmacoes.length !== 1) return `esperado só a afirmação real sobrevivendo, obtido ${JSON.stringify(resultado.afirmacoes)}`;
+      if (resultado.afirmacoes[0]!.fonte_tool_execucao_id !== "eval-real-1") return "manteve a afirmação errada (deveria ter descartado só a especulativa)";
+      return null;
+    },
+  },
+  {
+    nome: "filtrarAfirmacoesComerciaisSemFonte não mexe quando não há nenhuma afirmação comercial sem fonte",
+    rodar: () => {
+      const relatorioLimpo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [{ texto: "X", tipo: "preco", fonte_tool: "buscar_produtos", fonte_tool_execucao_id: "eval-ok-1" }],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      return filtrarAfirmacoesComerciaisSemFonte(relatorioLimpo) === relatorioLimpo
+        ? null
+        : "mexeu num relatório sem nenhuma afirmação comercial sem fonte";
+    },
+  },
+  {
+    nome: "filtrarAfirmacoesComerciaisSemFonte, seguido do backstop de ambiguidade, vira pedir_esclarecimento quando TUDO que sobrava era especulativo (nunca handoff mudo)",
+    rodar: () => {
+      const relatorioSoEspeculativo: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [{ texto: "Seu pedido fica R$ 50,80.", tipo: "preco", fonte_tool: null, fonte_tool_execucao_id: null }],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const filtrado = filtrarAfirmacoesComerciaisSemFonte(relatorioSoEspeculativo);
+      const final = garantirAmbiguidadeQuandoSemFatoNemSinal(filtrado);
+      return final.ambiguidade.tipo === "informacao_insuficiente" && final.afirmacoes.length === 0
+        ? null
+        : `esperado ambiguidade "informacao_insuficiente" sem afirmações, obtido ${JSON.stringify(final)}`;
     },
   },
 ];

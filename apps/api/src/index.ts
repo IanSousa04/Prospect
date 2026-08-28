@@ -13,6 +13,7 @@ import { analyticsRoutes } from "./routes/analytics.js";
 import { iaPermissoesRoutes } from "./routes/ia-permissoes.js";
 import { modoTesteRoutes } from "./routes/modo-teste.js";
 import { iaConfiguracoesRoutes } from "./routes/ia-configuracoes.js";
+import { whatsappRoutes } from "./routes/whatsapp.js";
 
 const app = Fastify({ logger: true });
 
@@ -31,6 +32,7 @@ await app.register(analyticsRoutes);
 await app.register(iaPermissoesRoutes);
 await app.register(modoTesteRoutes);
 await app.register(iaConfiguracoesRoutes);
+await app.register(whatsappRoutes);
 
 app
   .listen({ port: env.port, host: "0.0.0.0" })

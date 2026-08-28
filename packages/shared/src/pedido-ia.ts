@@ -152,23 +152,94 @@ export function informacoesPendentes(pedido: OrderContext): InformacaoPendente[]
   return pendentes;
 }
 
-/** OrderContext + campos derivados (subtotal, pendências) — o Order Context
- * inteiro, não só os itens, porque a tarefa 0063 deixou a UI editar
- * tipo_entrega/endereco/forma_pagamento também: sem esses campos aqui, a
- * tela não teria como saber o que já está selecionado. */
+/** Registro determinístico de que o resumo final do pedido foi mostrado ao
+ * cliente e está aguardando confirmação (tarefa 0022) — substitui o campo
+ * `OrderContext.confirmado`, que nunca era setado por código nenhum (o
+ * único gate real era o julgamento do LLM sobre a regra 11 do prompt do
+ * Investigador). Guardado em `ia_sessoes.estado_json.aguardando_confirmacao`
+ * (ver apps/ai-orchestrator/src/agent/sessao.ts), irmão de `pedido`, nunca
+ * dentro dele — é estado da CONVERSA (o que já foi mostrado), não do
+ * carrinho em si. */
+export interface AguardandoConfirmacao {
+  /** Fingerprint de `calcularHashConfirmacao(pedido)` no momento em que o
+   * resumo foi apresentado — se o carrinho mudar depois, o hash recalculado
+   * não bate mais e a confirmação anterior é invalidada automaticamente. */
+  hash: string;
+  /** ISO timestamp — confirmação mais antiga que isso nunca é aceita,
+   * mesmo com hash batendo (evita reaproveitar um "sim" de muito tempo
+   * atrás na conversa). */
+  expiraEm: string;
+  /** Texto do resumo mostrado — só informativo, pra exibição no painel
+   * humano (CLAUDE.md regra 8); nunca usado pra decisão de código. */
+  resumoTexto: string;
+}
+
+/** Hash determinístico (NÃO criptográfico — só detecção de mudança, não
+ * segurança) do que importa pra decidir se uma confirmação anterior ainda
+ * vale: itens, tipo de entrega, endereço, forma de pagamento. Roda tanto no
+ * ai-orchestrator quanto potencialmente em outros consumidores de
+ * `packages/shared` — implementação leve de propósito, sem depender de
+ * `crypto` do Node. */
+export function calcularHashConfirmacao(pedido: OrderContext): string {
+  const chave = JSON.stringify({
+    itens: [...pedido.itens]
+      .sort((a, b) => a.linha_id.localeCompare(b.linha_id))
+      .map((i) => ({
+        produto_id: i.produto_id,
+        quantidade: i.quantidade,
+        observacoes: i.observacoes,
+        opcoes: [...i.opcoes.map((o) => o.opcao_id)].sort(),
+      })),
+    tipo_entrega: pedido.tipo_entrega,
+    endereco: pedido.endereco,
+    forma_pagamento: pedido.forma_pagamento,
+  });
+  let hash = 0;
+  for (let i = 0; i < chave.length; i++) {
+    hash = (Math.imul(hash, 31) + chave.charCodeAt(i)) | 0;
+  }
+  return hash.toString(36);
+}
+
+/** Texto legível do resumo do carrinho — usado tanto como `resumoTexto` de
+ * `AguardandoConfirmacao` (exibição humana) quanto reaproveitável por
+ * qualquer síntese determinística que precise descrever o carrinho sem
+ * inventar nada (sempre derivado só do próprio `OrderContext`). */
+export function construirResumoTexto(pedido: OrderContext): string {
+  if (pedido.itens.length === 0) return "Carrinho vazio.";
+  const linhas = pedido.itens.map((i) => `${i.quantidade}x ${i.nome_produto}`).join(", ");
+  return `${linhas}. Subtotal: R$ ${calcularSubtotal(pedido.itens).toFixed(2).replace(".", ",")}.`;
+}
+
+/** OrderContext + campos derivados (subtotal, pendências, confirmação
+ * pendente) — o Order Context inteiro, não só os itens, porque a tarefa
+ * 0063 deixou a UI editar tipo_entrega/endereco/forma_pagamento também: sem
+ * esses campos aqui, a tela não teria como saber o que já está
+ * selecionado. */
 export interface ResumoPedidoIa extends OrderContext {
   subtotal: number;
   pendencias: InformacaoPendente[];
+  /** null quando não há resumo pendente de confirmação agora — ver
+   * `AguardandoConfirmacao` (tarefa 0022). */
+  aguardando_confirmacao: AguardandoConfirmacao | null;
 }
 
 /** Resumo do Order Context — mesmo shape devolvido pelas tools de carrinho
  * pro Investigador (evidência real) e pela API pra UI (painel "Carrinho" no
  * atendimento, antes de existir um pedido de verdade, e editável pelo
- * humano — tarefa 0063). Um único formato, dois consumidores. */
-export function resumoPedidoIa(pedido: OrderContext): ResumoPedidoIa {
+ * humano — tarefa 0063). Um único formato, dois consumidores.
+ * `aguardandoConfirmacao` é opcional porque a maioria dos chamadores (toda
+ * mutação de carrinho) não tem uma confirmação pendente fresca pra
+ * reportar — só `consultar_carrinho` (ai-orchestrator) e o GET da API
+ * carregam o valor real da sessão e passam explicitamente. */
+export function resumoPedidoIa(
+  pedido: OrderContext,
+  aguardandoConfirmacao: AguardandoConfirmacao | null = null,
+): ResumoPedidoIa {
   return {
     ...pedido,
     subtotal: calcularSubtotal(pedido.itens),
     pendencias: informacoesPendentes(pedido),
+    aguardando_confirmacao: aguardandoConfirmacao,
   };
 }

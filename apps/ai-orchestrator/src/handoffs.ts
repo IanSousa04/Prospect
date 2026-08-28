@@ -17,7 +17,7 @@ const ORIGENS_LEGIVEIS: Record<CriarHandoffInput["origem"], string> = {
  * mesmos campos estruturados do handoff (nunca por um LLM) — mesmo espírito
  * de nunca deixar o Atendente redigir algo que já existe como dado real.
  */
-function descreverHandoffParaTeste(input: CriarHandoffInput): string {
+function descreverHandoffParaTeste(input: CriarHandoffInput, respostaDescartada?: string | null): string {
   const linhas = [
     "🧪 _[modo teste] handoff registrado_",
     `Origem: ${ORIGENS_LEGIVEIS[input.origem]}`,
@@ -27,6 +27,12 @@ function descreverHandoffParaTeste(input: CriarHandoffInput): string {
   ];
   if (input.acao_sugerida) {
     linhas.push(`Ação sugerida: ${input.acao_sugerida}`);
+  }
+  // Só em modo teste: mostra a resposta que a verificação anti-alucinação
+  // descartou antes do envio, pra quem está testando enxergar exatamente o
+  // que ia sair (nunca aparece no handoff real nem chega ao cliente).
+  if (respostaDescartada) {
+    linhas.push(`Resposta descartada: ${respostaDescartada}`);
   }
   return linhas.join("\n");
 }
@@ -38,7 +44,15 @@ function descreverHandoffParaTeste(input: CriarHandoffInput): string {
  * contrato). O orquestrador não faz round-trip HTTP porque já roda como
  * processo confiável, igual ao whatsapp-worker.
  */
-export async function criarHandoff(empresaId: string, input: CriarHandoffInput): Promise<void> {
+export async function criarHandoff(
+  empresaId: string,
+  input: CriarHandoffInput,
+  /** Só usado pelo log de modo teste (nunca persistido no handoff real) —
+   * a resposta que o Atendente gerou e que foi descartada antes do envio,
+   * quando o motivo do handoff é a verificação anti-alucinação reprovando
+   * o texto. */
+  respostaDescartadaParaTeste?: string | null,
+): Promise<void> {
   const validado = CriarHandoffSchema.parse(input);
 
   const { error } = await supabaseAdmin.from("handoffs").insert({ ...validado, empresa_id: empresaId });
@@ -62,7 +76,7 @@ export async function criarHandoff(empresaId: string, input: CriarHandoffInput):
       empresa_id: empresaId,
       atendimento_id: validado.atendimento_id,
       remetente: "ia",
-      conteudo: descreverHandoffParaTeste(validado),
+      conteudo: descreverHandoffParaTeste(validado, respostaDescartadaParaTeste),
       metadata_json: {},
     });
   }

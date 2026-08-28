@@ -14,6 +14,7 @@ import { supabaseAdmin } from "../lib/supabase.js";
 import type { ToolContext } from "../tools/index.js";
 import type { EvidenciaColetada } from "./investigador.js";
 import { pedidoVazio, type OrderContext } from "./pedido-contexto.js";
+import type { AguardandoConfirmacao } from "@prospect/shared";
 
 interface EstadoSessao {
   ultimo_produto_mencionado?: {
@@ -21,6 +22,10 @@ interface EstadoSessao {
     nome: string;
   };
   pedido?: OrderContext;
+  /** Confirmação pendente do resumo final do pedido (tarefa 0022) — irmã
+   * de `pedido`, nunca dentro dele: é estado da CONVERSA (o que já foi
+   * mostrado ao cliente), não do carrinho em si. */
+  aguardando_confirmacao?: AguardandoConfirmacao;
 }
 
 /** Lê o `estado_json` bruto desta sessão (ou `{}` se não existe linha
@@ -77,6 +82,25 @@ export async function carregarPedidoEmConstrucao(ctx: ToolContext): Promise<Orde
  * (nunca sobrescreve `ultimo_produto_mencionado`). */
 export async function salvarPedidoEmConstrucao(ctx: ToolContext, pedido: OrderContext): Promise<void> {
   await mesclarEstado(ctx, { pedido });
+}
+
+/** Confirmação pendente do resumo final desta conversa (tarefa 0022) —
+ * nunca `null` explícito no banco, sempre ausente (`undefined`) quando não
+ * há nenhuma, mesmo padrão do resto deste arquivo. */
+export async function carregarConfirmacaoPendente(ctx: ToolContext): Promise<AguardandoConfirmacao | null> {
+  const estado = await lerEstadoBruto(ctx);
+  return estado.aguardando_confirmacao ?? null;
+}
+
+/** Salva (ou limpa, passando `undefined`) a confirmação pendente — chamado
+ * por `consultar_carrinho` (refresca sempre que o resumo é mostrado de
+ * novo) e por `criar_pedido` (limpa depois de criar de verdade, pra nunca
+ * sobrar uma confirmação "usada" que pudesse ser reaproveitada). */
+export async function salvarConfirmacaoPendente(
+  ctx: ToolContext,
+  confirmacao: AguardandoConfirmacao | undefined,
+): Promise<void> {
+  await mesclarEstado(ctx, { aguardando_confirmacao: confirmacao });
 }
 
 /** Ferramentas cujo resultado pode conter um produto/combo específico —

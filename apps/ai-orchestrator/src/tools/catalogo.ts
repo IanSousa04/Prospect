@@ -30,7 +30,14 @@ async function buscarProdutosBase(
     .limit(15);
 
   if (termo?.trim()) {
-    query = query.ilike("nome", `%${termo.trim()}%`);
+    // Cliente digita nome sem pontuação exata ("x bacon", "x burguer") e o
+    // cardápio cadastra com hífen ("X-Bacon") — busca por palavra, com
+    // qualquer separador entre elas, em vez de exigir o termo literal
+    // (ilike de substring simples deixava de achar produto existente por
+    // causa só do hífen, forçando a IA a alucinar preço de memória em vez
+    // de ter evidência real, ver agent/verificacao.ts).
+    const palavras = termo.trim().split(/[\s-]+/).filter(Boolean);
+    query = query.ilike("nome", `%${palavras.join("%")}%`);
   }
 
   const { data, error } = await query;

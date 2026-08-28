@@ -18,12 +18,20 @@ import { randomUUID } from "node:crypto";
 import { montarItensComSnapshot } from "@prospect/pedidos-core";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { registerTool, type ToolContext } from "./registry.js";
-import { carregarPedidoEmConstrucao, salvarPedidoEmConstrucao } from "../agent/sessao.js";
+import {
+  carregarPedidoEmConstrucao,
+  salvarPedidoEmConstrucao,
+  salvarConfirmacaoPendente,
+} from "../agent/sessao.js";
 import {
   aplicarMutacaoCarrinho,
   encontrarLinhaEquivalente,
   resumoPedidoIa,
+  informacoesPendentes,
+  calcularHashConfirmacao,
+  construirResumoTexto,
   type ItemCarrinho,
+  type AguardandoConfirmacao,
 } from "../agent/pedido-contexto.js";
 import type { EnderecoEntrega, FormaPagamento, TipoEntrega } from "@prospect/shared";
 
@@ -243,6 +251,8 @@ registerTool({
   },
 });
 
+const MINUTOS_EXPIRACAO_CONFIRMACAO = 10;
+
 registerTool({
   nome: "consultar_carrinho",
   descricao: "Consulta o estado atual do carrinho do pedido em construção desta conversa (itens, subtotal, o que ainda falta pra fechar o pedido).",
@@ -250,6 +260,29 @@ registerTool({
   risco: "baixo",
   executor: async (_input: unknown, ctx: ToolContext) => {
     const pedido = await carregarPedidoEmConstrucao(ctx);
-    return resumoPedidoIa(pedido);
+    const pendencias = informacoesPendentes(pedido);
+
+    // Toda vez que o resumo é consultado com o pedido pronto pra fechar
+    // (só falta a confirmação final), registra/refresca determinístico
+    // que ESSE resumo específico foi mostrado — hash+expiração (tarefa
+    // 0022), nunca confia só no julgamento do LLM de que "o cliente
+    // confirmou". Qualquer mutação de carrinho depois disso muda o hash
+    // automaticamente, invalidando a confirmação sem precisar limpar nada
+    // explicitamente (ver criar_pedido, tools/pedido.ts).
+    if (pendencias.length === 1 && pendencias[0] === "confirmacao_final") {
+      const confirmacao: AguardandoConfirmacao = {
+        hash: calcularHashConfirmacao(pedido),
+        expiraEm: new Date(Date.now() + MINUTOS_EXPIRACAO_CONFIRMACAO * 60_000).toISOString(),
+        resumoTexto: construirResumoTexto(pedido),
+      };
+      await salvarConfirmacaoPendente(ctx, confirmacao);
+      return resumoPedidoIa(pedido, confirmacao);
+    }
+
+    // Carrinho ainda não está pronto pra fechar — qualquer confirmação
+    // pendente antiga não faz mais sentido (ex.: cliente reabriu o
+    // carrinho depois de já ter visto um resumo).
+    await salvarConfirmacaoPendente(ctx, undefined);
+    return resumoPedidoIa(pedido, null);
   },
 });

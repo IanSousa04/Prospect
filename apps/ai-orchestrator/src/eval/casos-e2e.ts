@@ -112,7 +112,7 @@ export async function montarCasosE2E(empresaId: string): Promise<CasoE2E[]> {
   return casoPreco ? [...CASOS_FIXOS, casoPreco] : CASOS_FIXOS;
 }
 
-interface AtendimentoDeTeste {
+export interface AtendimentoDeTeste {
   clienteId: string;
   atendimentoId: string;
 }
@@ -123,7 +123,7 @@ interface AtendimentoDeTeste {
  * `criarHandoff` dispare a notificação de modo teste (ver handoffs.ts), o
  * whatsapp-worker nunca entrega de verdade pra um número inválido — e o
  * atendimento é apagado logo em seguida de qualquer forma. */
-async function criarAtendimentoDeTeste(empresaId: string): Promise<AtendimentoDeTeste> {
+export async function criarAtendimentoDeTeste(empresaId: string): Promise<AtendimentoDeTeste> {
   const telefoneFake = `0${Date.now()}`.slice(0, 13);
   const { data: cliente, error: clienteError } = await supabaseAdmin
     .from("clientes")
@@ -145,8 +145,52 @@ async function criarAtendimentoDeTeste(empresaId: string): Promise<AtendimentoDe
 /** Apaga o cliente de teste — cascata cuida de atendimento/mensagens/
  * handoffs/decisões/execuções (mesmo mecanismo de apagarAtendimentosDeTeste
  * no whatsapp-worker, ver docs/ROADMAP.md §3). */
-async function limparAtendimentoDeTeste(clienteId: string): Promise<void> {
+export async function limparAtendimentoDeTeste(clienteId: string): Promise<void> {
   await supabaseAdmin.from("clientes").delete().eq("id", clienteId);
+}
+
+export interface ConfigDeProcessamentoDeTeste {
+  ctx: ToolContext;
+  tomDeVoz: "formal" | "neutro" | "amigavel" | "descontraido";
+  usaEmoji: boolean;
+  nomeAssistente: string | null;
+  comportamento: ReturnType<typeof ComportamentoJsonSchema.parse>;
+}
+
+/** Monta a config real da empresa (permissões, tom de voz, comportamento)
+ * pra rodar `processarMensagem` como se fosse o atendimento de teste dado —
+ * extraído de `rodarCasoE2E` pra ser reaproveitado por qualquer runner que
+ * precise de mais de um turno na mesma sessão (ver eval/personas/). */
+export async function montarConfigDeProcessamentoDeTeste(
+  empresaId: string,
+  teste: AtendimentoDeTeste,
+): Promise<ConfigDeProcessamentoDeTeste> {
+  const { data: permissoesRows } = await supabaseAdmin
+    .from("ia_permissoes")
+    .select("*")
+    .eq("empresa_id", empresaId);
+  const { data: config } = await supabaseAdmin
+    .from("ia_configuracoes")
+    .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json")
+    .eq("empresa_id", empresaId)
+    .maybeSingle();
+  const comportamentoParseado = ComportamentoJsonSchema.safeParse(config?.comportamento_json ?? {});
+  const comportamento = comportamentoParseado.success ? comportamentoParseado.data : {};
+
+  return {
+    ctx: {
+      empresaId,
+      atendimentoId: teste.atendimentoId,
+      clienteId: teste.clienteId,
+      permissoes: mapaDePermissoes((permissoesRows ?? []) as IaPermissao[]),
+      mensagemId: null,
+      comportamento,
+    },
+    tomDeVoz: (config?.tom_de_voz as "formal" | "neutro" | "amigavel" | "descontraido") ?? "amigavel",
+    usaEmoji: config?.usa_emoji ?? true,
+    nomeAssistente: config?.nome_assistente ?? null,
+    comportamento,
+  };
 }
 
 export async function rodarCasoE2E(caso: CasoE2E): Promise<{ ok: boolean; motivo?: string }> {
@@ -154,34 +198,12 @@ export async function rodarCasoE2E(caso: CasoE2E): Promise<{ ok: boolean; motivo
   const teste = await criarAtendimentoDeTeste(empresaId);
 
   try {
-    const { data: permissoesRows } = await supabaseAdmin
-      .from("ia_permissoes")
-      .select("*")
-      .eq("empresa_id", empresaId);
-    const { data: config } = await supabaseAdmin
-      .from("ia_configuracoes")
-      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json")
-      .eq("empresa_id", empresaId)
-      .maybeSingle();
-    const comportamentoParseado = ComportamentoJsonSchema.safeParse(config?.comportamento_json ?? {});
-
-    const ctx: ToolContext = {
-      empresaId,
-      atendimentoId: teste.atendimentoId,
-      clienteId: teste.clienteId,
-      permissoes: mapaDePermissoes((permissoesRows ?? []) as IaPermissao[]),
-      mensagemId: null,
-      comportamento: comportamentoParseado.success ? comportamentoParseado.data : {},
-    };
+    const config = await montarConfigDeProcessamentoDeTeste(empresaId, teste);
 
     const resultado = await processarMensagem({
       pergunta: caso.pergunta,
       historico: caso.historico ?? [],
-      ctx,
-      tomDeVoz: (config?.tom_de_voz as "formal" | "neutro" | "amigavel" | "descontraido") ?? "amigavel",
-      usaEmoji: config?.usa_emoji ?? true,
-      nomeAssistente: config?.nome_assistente ?? null,
-      comportamento: comportamentoParseado.success ? comportamentoParseado.data : {},
+      ...config,
     });
 
     const motivo = caso.validar(resultado);

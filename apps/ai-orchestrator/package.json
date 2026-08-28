@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "eval": "tsx src/eval/gabarito.ts",
+    "simular-conversas": "tsx src/eval/personas/index.ts",
     "verificar-modo-sombra": "tsx src/scripts/verificar-modo-sombra.ts"
   },
   "dependencies": {

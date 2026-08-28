@@ -1,4 +1,14 @@
-import { TIPOS_COMERCIAIS, type Confianca, type RelatorioInvestigacao } from "./types.js";
+import { TIPOS_COMERCIAIS, type Afirmacao, type Confianca, type RelatorioInvestigacao } from "./types.js";
+
+/** Afirmações comerciais (preço/disponibilidade/promoção/taxa/horário) sem
+ * fonte real desta rodada — o mesmo veto que `computeConfianca` aplica pra
+ * derrubar confiança pra "baixa" (CLAUDE.md regra 1), exposto separado pra
+ * `investigador.ts` poder dar ao modelo uma chance determinística de
+ * rechecar com ferramenta ANTES de aceitar isso como handoff definitivo
+ * (ver `investigar()`, retry por "semFonte"). */
+export function afirmacoesComerciaisSemFonte(relatorio: RelatorioInvestigacao): Afirmacao[] {
+  return relatorio.afirmacoes.filter((a) => TIPOS_COMERCIAIS.has(a.tipo) && !a.fonte_tool_execucao_id);
+}
 
 /**
  * Confiança calculada mecanicamente a partir do relatório — nunca pedida
@@ -27,10 +37,7 @@ export function computeConfianca(relatorio: RelatorioInvestigacao): Confianca {
   // Veto duro: toda afirmação comercial sem fonte_tool_execucao_id real é
   // uma alucinação potencial (CLAUDE.md regra 1) — derruba pra baixa
   // independente de qualquer outra coisa.
-  const semFonte = relatorio.afirmacoes.some(
-    (a) => TIPOS_COMERCIAIS.has(a.tipo) && !a.fonte_tool_execucao_id,
-  );
-  if (semFonte) return "baixa";
+  if (afirmacoesComerciaisSemFonte(relatorio).length > 0) return "baixa";
 
   const cobertura = new Set(relatorio.afirmacoes.map((a) => a.fonte_tool).filter((t): t is string => t !== null))
     .size;

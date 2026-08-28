@@ -11,6 +11,7 @@ export type {
   OrderContext,
   InformacaoPendente,
   ResumoPedidoIa,
+  AguardandoConfirmacao,
 } from "@prospect/shared";
 export {
   pedidoVazio,
@@ -19,4 +20,6 @@ export {
   aplicarMutacaoCarrinho,
   informacoesPendentes,
   resumoPedidoIa,
+  calcularHashConfirmacao,
+  construirResumoTexto,
 } from "@prospect/shared";

@@ -6,6 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { montarItensComSnapshot, type ItemPedidoInput } from "@prospect/pedidos-core";
 import type { EnderecoEntrega, FormaPagamento, OrigemPedido, Pedido, TipoEntrega } from "./pedidos.js";
+import { avaliarRiscoAcao, type ConfiguracaoRiscoAcao } from "./risco-acao.js";
 
 export interface CriarPedidoParams {
   empresaId: string;
@@ -26,23 +27,24 @@ export type MotivoBloqueioCriarPedido = "empresa_exige_confirmacao_humana" | "va
 
 /** Gate de risco real pra `criar_pedido` (tarefa 0055, CLAUDE.md regra 6:
  * ação irreversível com impacto financeiro exige confiança alta + baixo
- * risco + permissão explícita — confiança alta sozinha não basta). Função
- * pura, testável sem banco — os dois campos vêm de `ia_permissoes`
- * (existiam desde a migration 0010 mas nunca eram lidos em código
- * nenhum). Ausência de configuração = permissivo (mesmo padrão de
- * `comportamento_json`) — só limite/exigência EXPLICITAMENTE configurados
- * pela empresa bloqueiam a criação automática. */
+ * risco + permissão explícita — confiança alta sozinha não basta). Wrapper
+ * fino sobre a matriz de risco genérica (`risco-acao.ts`, tarefa 0023) —
+ * `criar_pedido` não tem conceito de status prévio (não existe pedido
+ * anterior nesta ação), então só passa `valorFinanceiro`. Mantido com essa
+ * assinatura específica pra não quebrar `tools/pedido.ts` nem os testes
+ * determinísticos existentes. */
 export function avaliarRiscoCriarPedido(
   permissao: { exige_confirmacao_humana: boolean | null; valor_maximo_sem_handoff: number | null } | undefined,
   total: number,
 ): { bloqueado: false } | { bloqueado: true; motivo: MotivoBloqueioCriarPedido } {
-  if (permissao?.exige_confirmacao_humana === true) {
-    return { bloqueado: true, motivo: "empresa_exige_confirmacao_humana" };
-  }
-  if (permissao?.valor_maximo_sem_handoff != null && total > permissao.valor_maximo_sem_handoff) {
-    return { bloqueado: true, motivo: "valor_acima_do_limite_sem_handoff" };
-  }
-  return { bloqueado: false };
+  const configuracao: ConfiguracaoRiscoAcao | undefined = permissao && {
+    ...permissao,
+    condicoes_json: null,
+  };
+  const resultado = avaliarRiscoAcao({ permissao: configuracao, valorFinanceiro: total });
+  return resultado.bloqueado
+    ? { bloqueado: true, motivo: resultado.motivo as MotivoBloqueioCriarPedido }
+    : { bloqueado: false };
 }
 
 export async function criarPedidoComItens(

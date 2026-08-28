@@ -8,5 +8,5 @@ import "./pedido.js";
 import "./carrinho.js";
 import "./operacao.js";
 
-export { executeTool, getToolDefinitionsForLlm, getToolsForEmpresa, registerTool } from "./registry.js";
+export { executeTool, getToolDefinitionsForLlm, getToolsForEmpresa, getRiscoFerramenta, registerTool } from "./registry.js";
 export type { ToolContext, ToolDefinicao, ResultadoExecucaoTool } from "./registry.js";

@@ -63,6 +63,16 @@ export function getToolDefinitionsForLlm(permissoes: Map<NomeFerramenta, IaPermi
   }));
 }
 
+/** Risco declarado de uma tool (`ToolDefinicao.risco`, existia desde sempre
+ * mas nunca era consultado em lugar nenhum — ver tarefa 0023) — usado pra
+ * `orquestrador.ts` registrar o risco REAL de cada rodada em `ia_decisoes`
+ * em vez do `"baixo"` fixo. `"baixo"` é o default seguro pra uma tool que,
+ * por algum motivo, não está mais registrada (nunca deveria acontecer em
+ * operação normal). */
+export function getRiscoFerramenta(nome: NomeFerramenta): ToolDefinicao["risco"] {
+  return registro.get(nome)?.risco ?? "baixo";
+}
+
 async function logExecucao(params: {
   ctx: ToolContext;
   toolNome: string;

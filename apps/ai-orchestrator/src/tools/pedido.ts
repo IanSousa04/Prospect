@@ -1,8 +1,13 @@
 import { avaliarRiscoCriarPedido, criarPedidoComItens } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { registerTool, type ToolContext } from "./registry.js";
-import { carregarPedidoEmConstrucao, salvarPedidoEmConstrucao } from "../agent/sessao.js";
-import { calcularSubtotal, informacoesPendentes, pedidoVazio } from "../agent/pedido-contexto.js";
+import {
+  carregarPedidoEmConstrucao,
+  salvarPedidoEmConstrucao,
+  carregarConfirmacaoPendente,
+  salvarConfirmacaoPendente,
+} from "../agent/sessao.js";
+import { calcularSubtotal, informacoesPendentes, pedidoVazio, calcularHashConfirmacao } from "../agent/pedido-contexto.js";
 
 interface PedidoIdInput {
   pedido_id?: string;
@@ -113,6 +118,21 @@ registerTool({
       return { erro: "pedido_incompleto", pendencias };
     }
 
+    // Confirmação estruturada (tarefa 0022) — nunca confia só no
+    // julgamento do LLM de que "o cliente confirmou": exige um registro
+    // determinístico (hash+expiração) criado por "consultar_carrinho"
+    // quando o resumo foi de fato mostrado, ainda válido e batendo com o
+    // carrinho ATUAL (recalculado agora, nunca confiando no hash salvo
+    // sozinho — se o carrinho mudou desde então, o hash não bate mais).
+    const confirmacaoPendente = await carregarConfirmacaoPendente(ctx);
+    const confirmacaoValida =
+      confirmacaoPendente != null &&
+      confirmacaoPendente.hash === calcularHashConfirmacao(pedido) &&
+      new Date(confirmacaoPendente.expiraEm).getTime() > Date.now();
+    if (!confirmacaoValida) {
+      return { erro: "confirmacao_expirada_ou_invalida" };
+    }
+
     // Gate de risco real (campos de `ia_permissoes` que existiam desde a
     // migration 0010 mas nunca eram lidos em lugar nenhum — ver tarefa
     // 0023, "risco real na matriz de decisão", ainda pendente pra tools
@@ -152,7 +172,22 @@ registerTool({
     // vive em `pedidos`/`itens_pedido` (fonte real, já visível no painel
     // "Pedido" existente); um pedido novo na mesma conversa começa do zero.
     await salvarPedidoEmConstrucao(ctx, pedidoVazio());
+    // Limpa a confirmação usada — nunca deixa um hash "gasto" disponível
+    // pra ser reaproveitado por engano numa chamada futura.
+    await salvarConfirmacaoPendente(ctx, undefined);
 
-    return { pedido_criado: true, pedido_id: resultado.pedido.id, total: resultado.pedido.total };
+    // Devolve o resumo completo (não só id/total) — a mensagem de
+    // confirmação pro cliente é montada em código a partir DESTE retorno
+    // (ver agent/confirmacao-pedido.ts), nunca escrita livre pelo Atendente,
+    // então precisa ter tudo que aparece nela: itens, entrega, pagamento.
+    return {
+      pedido_criado: true,
+      pedido_id: resultado.pedido.id,
+      total: resultado.pedido.total,
+      itens: pedido.itens.map((item) => ({ nome_produto: item.nome_produto, quantidade: item.quantidade })),
+      tipo_entrega: pedido.tipo_entrega,
+      endereco: pedido.endereco,
+      forma_pagamento: pedido.forma_pagamento,
+    };
   },
 });

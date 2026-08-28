@@ -3,7 +3,8 @@ import { getChatModel } from "../llm/client.js";
 import type { ChatMessage, ChatModel, ToolDefinitionForLlm } from "../llm/types.js";
 import { executeTool, getToolDefinitionsForLlm, type ToolContext } from "../tools/index.js";
 import type { Afirmacao, RelatorioInvestigacao, TipoAfirmacao } from "./types.js";
-import { computeConfianca } from "./confianca.js";
+import { computeConfianca, afirmacoesComerciaisSemFonte } from "./confianca.js";
+import { carregarPedidoEmConstrucao } from "./sessao.js";
 
 const MAX_ITERACOES = 6;
 /** Segunda rodada, mais curta, só pra tentar confirmar com uma segunda
@@ -44,7 +45,7 @@ function regraComportamento(c: ComportamentoJson): string {
     proibicoes.push('nunca chame "buscar_combos" por conta própria pra sugerir combo — só se o cliente perguntar sobre isso');
   }
   if (proibicoes.length === 0) return "";
-  return `\n12. Esta empresa configurou restrições de comportamento comercial — respeite exatamente: ${proibicoes.join("; ")}.`;
+  return `\n13. Esta empresa configurou restrições de comportamento comercial — respeite exatamente: ${proibicoes.join("; ")}.`;
 }
 
 function montarPromptInvestigador(comportamento: ComportamentoJson): string {
@@ -63,7 +64,8 @@ Regras:
 8. Resultado vazio de uma ferramenta que rodou com sucesso (lista vazia, "nenhum resultado", campo nulo) É uma resposta real, não falta de evidência — significa "não existe isso", não "não sei". SEMPRE gere uma afirmação tipo "generico" relatando esse fato negativo (ex.: ferramenta "consultar_historico" retornou lista vazia → afirme "o cliente não tem nenhum pedido anterior registrado", citando essa execução como fonte). Nunca deixe de afirmar nada só porque o resultado foi vazio — isso faria o Atendente escalar pra humano uma pergunta que você já sabe responder com certeza.
 9. Pergunta sobre a identidade do próprio cliente (ex.: "qual é o meu nome?", "vocês têm meu telefone?") SEMPRE chama "consultar_cliente" primeiro — o cadastro já existe (nome vem do perfil do WhatsApp, capturado automaticamente antes mesmo desta conversa), nunca assuma que "não temos essa informação salva" sem checar a ferramenta. Se vier "nome": null (cadastro existe mas sem nome capturado), isso é o fato — afirme que o nome não está registrado (tipo "generico", citando a execução real), nunca invente um nome nem diga genericamente que "não temos essa informação salva" sem ter chamado a ferramenta. Toda afirmação sobre o cliente descreve A PESSOA QUE ESTÁ PERGUNTANDO, nunca você mesmo — escreva o texto da afirmação em terceira pessoa e sem ambiguidade (ex.: "O nome do cliente é Ian.", nunca "Meu nome é Ian" nem "Seu nome é Ian" — a conversão pra 2ª pessoa é trabalho do Atendente, não seu).
 10. Quando o cliente quiser montar/mudar um pedido ("quero um X-Bacon", "tira a batata", "muda pra 2 unidades"), use as ferramentas de carrinho ("adicionar_ao_carrinho", "remover_do_carrinho", "atualizar_item_carrinho", "consultar_carrinho") — nunca calcule ou descreva o carrinho de memória. "linha_id" vem sempre de uma chamada real anterior (nunca invente um). O resultado de qualquer ferramenta de carrinho já inclui "pendencias" (o que falta pro pedido poder ser fechado) — relate isso como afirmação tipo "generico", citando a execução real, pra o Atendente saber o que perguntar em seguida. Estas ferramentas só mexem no carrinho em construção desta conversa — nenhuma delas cria um pedido de verdade. IMPORTANTE: se o histórico mostra um produto discutido e o cliente confirma isso, mesmo implicitamente (ex.: você perguntou "confirma o X-Bacon sem extra?" e, em vez de responder diretamente, o cliente já pede outro item — "quero uma coca também" — isso conta como aceitar o que estava combinado), chame "adicionar_ao_carrinho" pra ESSE item também nesta mesma rodada, não deixe combinado só na conversa esperando uma confirmação explícita que talvez nunca venha. Sempre que for confirmar/resumir o carrinho pro cliente (mesmo que só um item tenha mudado nesta rodada), chame "consultar_carrinho" pra ter evidência fresca de TODOS os itens antes de relatar — nunca cite o preço de um item que já estava no carrinho usando só o que foi dito em mensagens anteriores. Se o carrinho já tem pelo menos um item e "pendencias" incluir "tipo_entrega" (veja o resultado de "consultar_carrinho"/"adicionar_ao_carrinho"), pergunte ao cliente se é entrega ou retirada antes de avançar pra endereço/pagamento — só chame "definir_tipo_entrega" depois que o cliente responder de verdade, nunca escolha sozinho nem pergunte de novo algo que ele já respondeu nesta conversa. Se "pendencias" incluir "endereco" (tipo_entrega já é "entrega"), primeiro chame "consultar_cliente" pra ver se já existe um endereço salvo — se existir, pergunte "entregar no mesmo endereço de sempre, [endereço]?" em vez de pedir tudo de novo; só chame "definir_endereco_entrega" depois que o cliente confirmar o endereço salvo OU informar um novo endereço completo. Se "pendencias" incluir "forma_pagamento", pergunte como o cliente quer pagar (dinheiro, cartão de crédito, cartão de débito, Pix ou outro) — só chame "definir_forma_pagamento" depois da resposta real; nunca assuma Pix ou qualquer forma só porque é comum.
-11. Quando "pendencias" for exatamente ["confirmacao_final"] (carrinho, entrega e pagamento já definidos), chame "consultar_carrinho" e apresente o resumo completo pro cliente (itens, subtotal, entrega, pagamento) perguntando se pode confirmar — "criar_pedido" É A AÇÃO MAIS IMPORTANTE DE TODA ESTA CONVERSA (cria um pedido real, com impacto financeiro real, irreversível por aqui). Só chame "criar_pedido" depois que o cliente confirmar explicitamente ESSE resumo específico ("pode confirmar", "é isso", "fechar assim", "sim, pode mandar") — nunca porque ele pediu mais um item, nunca porque a conversa "parece" estar terminando, nunca em resposta a uma mensagem ambígua. Se "criar_pedido" retornar "erro":"confirmacao_humana_necessaria", isso é definitivo: não insista, não tente de novo, um humano vai assumir.${regraComportamento(comportamento)}`;
+11. Quando "pendencias" for exatamente ["confirmacao_final"] (carrinho, entrega e pagamento já definidos), chame "consultar_carrinho" e apresente o resumo completo pro cliente (itens, subtotal, entrega, pagamento) perguntando se pode confirmar — "criar_pedido" É A AÇÃO MAIS IMPORTANTE DE TODA ESTA CONVERSA (cria um pedido real, com impacto financeiro real, irreversível por aqui). Só chame "criar_pedido" depois que o cliente confirmar explicitamente ESSE resumo específico ("pode confirmar", "é isso", "fechar assim", "sim, pode mandar") — nunca porque ele pediu mais um item, nunca porque a conversa "parece" estar terminando, nunca em resposta a uma mensagem ambígua. Se "criar_pedido" retornar "erro":"confirmacao_humana_necessaria", isso é definitivo: não insista, não tente de novo, um humano vai assumir. Se "criar_pedido" retornar "erro":"confirmacao_expirada_ou_invalida", o sistema detectou que o resumo mostrado antes não é mais válido (o carrinho mudou, ou demorou demais) — chame "consultar_carrinho" de novo e a próxima etapa vai reapresentar o resumo atualizado pro cliente confirmar mais uma vez; isso é normal, não é erro nem motivo pra escalar.
+12. NUNCA relate um subtotal ou resumo de pedido com valores (ex.: "fica R$ 50,80") a menos que você tenha chamado "consultar_carrinho" ou "adicionar_ao_carrinho" NESTA MESMA rodada e o resultado real contenha exatamente esses itens — mesmo que o cliente tenha descrito um pedido inteiro numa única mensagem (ex.: "quero 3 X-Bacon, 2 batatas e 4 cocas"), isso é só uma INTENÇÃO até você chamar "adicionar_ao_carrinho" de verdade pra cada item. Se o cliente descreveu um pedido grande/composto mas você ainda não tem certeza se é definitivo (ex.: ele ainda está decidindo, perguntando preço de outras coisas no meio), NÃO calcule nem cite nenhum subtotal de cabeça — ou já chame as ferramentas de carrinho pra esses itens (se a intenção for clara) e relate o resultado REAL delas, ou responda sem valor nenhum e pergunte se pode ir adicionando ao carrinho.${regraComportamento(comportamento)}`;
 }
 
 export interface EvidenciaColetada {
@@ -130,18 +132,36 @@ const FRASE_RESULTADO_VAZIO: Partial<Record<NomeFerramenta, string>> = {
  * real já era conhecida (episódio real: "o que eu já pedi?" escalado pra
  * humano mesmo sem nenhum pedido existir).
  */
-function sintetizarAfirmacoesDeResultadoVazio(
+export function sintetizarAfirmacoesDeResultadoVazio(
   relatorio: RelatorioInvestigacao,
   evidencias: EvidenciaColetada[],
 ): RelatorioInvestigacao {
   if (relatorio.sem_investigacao) return relatorio;
-  if (relatorio.afirmacoes.length > 0) return relatorio;
+
+  const evidenciasVaziasPorId = new Map(
+    evidencias.filter((e) => evidenciaEhVazia(e.output)).map((e) => [e.execucaoId, e]),
+  );
+  if (evidenciasVaziasPorId.size === 0) return relatorio;
+
+  // Caso o LLM já tenha produzido sua própria afirmação pra um resultado
+  // vazio (às vezes com fraseado técnico/de busca, ex.: "não encontrada nos
+  // resultados") — nunca deixa esse texto passar como está, sempre
+  // substitui pela frase determinística limpa da mesma execução real.
+  if (relatorio.afirmacoes.length > 0) {
+    const afirmacoesCorrigidas = relatorio.afirmacoes.map((a) => {
+      const evidenciaVazia = a.fonte_tool_execucao_id ? evidenciasVaziasPorId.get(a.fonte_tool_execucao_id) : undefined;
+      if (!evidenciaVazia) return a;
+      return {
+        ...a,
+        texto: FRASE_RESULTADO_VAZIO[evidenciaVazia.toolNome as NomeFerramenta] ?? "A busca não encontrou nenhum resultado.",
+      };
+    });
+    return { ...relatorio, afirmacoes: afirmacoesCorrigidas };
+  }
+
   if (relatorio.ambiguidade.tipo !== "nenhuma") return relatorio;
 
-  const evidenciasVazias = evidencias.filter((e) => evidenciaEhVazia(e.output));
-  if (evidenciasVazias.length === 0) return relatorio;
-
-  const afirmacoesSinteticas: Afirmacao[] = evidenciasVazias.map((e) => ({
+  const afirmacoesSinteticas: Afirmacao[] = [...evidenciasVaziasPorId.values()].map((e) => ({
     texto: FRASE_RESULTADO_VAZIO[e.toolNome as NomeFerramenta] ?? "A busca não encontrou nenhum resultado.",
     tipo: "generico",
     fonte_tool: e.toolNome,
@@ -149,6 +169,49 @@ function sintetizarAfirmacoesDeResultadoVazio(
   }));
 
   return { ...relatorio, afirmacoes: afirmacoesSinteticas };
+}
+
+/**
+ * Filtra (em vez de vetar a rodada inteira) afirmações comerciais sem
+ * fonte real desta rodada — episódio real (personas "confuso"/"simpático",
+ * ver tasks/0073): a IA às vezes compõe um resumo/subtotal especulativo
+ * ("fica R$ 50,80") sem ter chamado "consultar_carrinho"/
+ * "adicionar_ao_carrinho" de verdade nesta conversa, e antes disso
+ * derrubava a RODADA INTEIRA pra "confiança baixa" → handoff silencioso
+ * (`confianca.ts`, veto `afirmacoesComerciaisSemFonte`), mesmo quando
+ * outras afirmações da mesma rodada eram reais e verificadas. Descartar só
+ * a(s) afirmação(ões) sem fonte — mantendo as verificadas — cumpre a mesma
+ * regra 1 do CLAUDE.md (o dado inventado nunca chega ao Atendente) sem
+ * jogar fora informação real junto. Roda LOGO ANTES do backstop de
+ * ambiguidade: se depois de filtrar não sobrar nada, o backstop assume e
+ * vira `pedir_esclarecimento`, nunca mais handoff mudo por causa disso.
+ */
+export function filtrarAfirmacoesComerciaisSemFonte(relatorio: RelatorioInvestigacao): RelatorioInvestigacao {
+  if (relatorio.sem_investigacao) return relatorio;
+  const semFonte = new Set(afirmacoesComerciaisSemFonte(relatorio));
+  if (semFonte.size === 0) return relatorio;
+
+  return { ...relatorio, afirmacoes: relatorio.afirmacoes.filter((a) => !semFonte.has(a)) };
+}
+
+/**
+ * Último backstop da cadeia — se depois de TODAS as outras redes de
+ * segurança o relatório ainda ficou sem nenhuma afirmação e sem nenhuma
+ * ambiguidade marcada, mas ferramentas de fato foram chamadas, força
+ * `ambiguidade: "informacao_insuficiente"`. Sem isso, `computeConfianca`
+ * (agent/confianca.ts) trata "zero afirmações com ferramentas chamadas"
+ * como confiança baixa, e `decidir()` vira handoff SILENCIOSO
+ * (`respostaTexto: null`) pra qualquer situação não coberta explicitamente
+ * por uma das redes acima — abandonando o cliente sem resposta nenhuma.
+ * Forçar ambiguidade aqui garante que `decidir()` (que checa ambiguidade
+ * ANTES de confiança) sempre prefira perguntar ao cliente em vez de sumir. */
+export function garantirAmbiguidadeQuandoSemFatoNemSinal(relatorio: RelatorioInvestigacao): RelatorioInvestigacao {
+  if (relatorio.sem_investigacao) return relatorio;
+  if (relatorio.afirmacoes.length > 0) return relatorio;
+  if (relatorio.ambiguidade.tipo !== "nenhuma") return relatorio;
+  if (relatorio.ferramentasChamadas === 0) return relatorio;
+
+  return { ...relatorio, ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] } };
 }
 
 /** Ferramentas de carrinho que mutam estado de verdade (ao contrário de
@@ -214,6 +277,120 @@ export function sintetizarAfirmacaoDeMutacaoCarrinho(
   };
 }
 
+/** Traduz cada `InformacaoPendente` pra uma frase curta em português —
+ * reaproveitado pra dizer ao cliente exatamente o que falta quando
+ * "criar_pedido" recusa por pedido incompleto (ver
+ * `sintetizarAfirmacaoDePedidoIncompleto` abaixo). */
+const NOME_PENDENCIA: Record<string, string> = {
+  produtos: "escolher os produtos do pedido",
+  confirmar_carrinho: "confirmar o carrinho",
+  tipo_entrega: "dizer se é entrega ou retirada",
+  endereco: "informar o endereço de entrega",
+  forma_pagamento: "definir a forma de pagamento",
+  confirmacao_final: "confirmar o resumo final do pedido",
+};
+
+/**
+ * Rede de segurança determinística pro caso em que "criar_pedido" recusa
+ * por faltar informação (`{erro:"pedido_incompleto", pendencias:[...]}`,
+ * ver tools/pedido.ts) — esse formato não é "resultado vazio"
+ * (`evidenciaEhVazia` não cobre) nem uma mutação de carrinho bem-sucedida
+ * (`FERRAMENTAS_CARRINHO_MUTAM` exclui "criar_pedido" de propósito), então
+ * sem isso o relatório ficava sem nenhuma afirmação e sem ambiguidade
+ * marcada — episódio real: cliente mandou endereço + pagamento +
+ * "confirma logo" num turno só, "criar_pedido" recusou por faltar algo, e
+ * a rodada terminava em handoff silencioso (confiança "baixa" por zero
+ * afirmações) em vez de simplesmente dizer ao cliente o que falta. */
+export function sintetizarAfirmacaoDePedidoIncompleto(
+  relatorio: RelatorioInvestigacao,
+  evidencias: EvidenciaColetada[],
+): RelatorioInvestigacao {
+  if (relatorio.sem_investigacao) return relatorio;
+  if (relatorio.afirmacoes.length > 0) return relatorio;
+
+  const recusa = [...evidencias].reverse().find(
+    (e) =>
+      e.toolNome === "criar_pedido" &&
+      e.output &&
+      typeof e.output === "object" &&
+      (e.output as Record<string, unknown>).erro === "pedido_incompleto",
+  );
+  if (!recusa) return relatorio;
+
+  const pendencias = (recusa.output as { pendencias?: unknown }).pendencias;
+  const pendenciasArray = Array.isArray(pendencias) ? (pendencias as string[]) : [];
+  const descricoes = pendenciasArray.map((p) => NOME_PENDENCIA[p] ?? p);
+  const textoPendencias =
+    descricoes.length > 0 ? descricoes.join(", ") : "confirmar os detalhes do pedido";
+
+  return {
+    ...relatorio,
+    ambiguidade: { tipo: "nenhuma" },
+    afirmacoes: [
+      {
+        texto: `O pedido ainda não pode ser confirmado — falta: ${textoPendencias}.`,
+        tipo: "generico",
+        fonte_tool: "criar_pedido",
+        fonte_tool_execucao_id: recusa.execucaoId,
+      },
+    ],
+  };
+}
+
+/**
+ * Rede de segurança pro novo gate determinístico de confirmação (tarefa
+ * 0022): "criar_pedido" recusa com `erro:"confirmacao_expirada_ou_invalida"`
+ * quando não existe uma confirmação pendente válida (nunca foi mostrado um
+ * resumo, o carrinho mudou desde então, ou passou do prazo). Isso NÃO é um
+ * caso de risco/política (diferente de "confirmacao_humana_necessaria") —
+ * é uma situação normal de conversa (cliente demorou, ou mudou de ideia no
+ * meio) e a resposta certa é reapresentar o resumo atualizado e perguntar
+ * de novo, nunca handoff nem silêncio. Usa a evidência de
+ * "consultar_carrinho" desta mesma rodada (sempre presente — ver semente
+ * determinística no início de `investigar()`) pra montar o resumo fresco
+ * sem inventar nada. */
+export function sintetizarAfirmacaoDeConfirmacaoExpirada(
+  relatorio: RelatorioInvestigacao,
+  evidencias: EvidenciaColetada[],
+): RelatorioInvestigacao {
+  if (relatorio.sem_investigacao) return relatorio;
+  if (relatorio.afirmacoes.length > 0) return relatorio;
+
+  const recusa = [...evidencias].reverse().find(
+    (e) =>
+      e.toolNome === "criar_pedido" &&
+      e.output &&
+      typeof e.output === "object" &&
+      (e.output as Record<string, unknown>).erro === "confirmacao_expirada_ou_invalida",
+  );
+  if (!recusa) return relatorio;
+
+  const afirmacoes: Afirmacao[] = [
+    {
+      texto: "O resumo anterior do pedido expirou ou o carrinho mudou desde então — é preciso mostrar o resumo atualizado de novo antes de confirmar.",
+      tipo: "generico",
+      fonte_tool: "criar_pedido",
+      fonte_tool_execucao_id: recusa.execucaoId,
+    },
+  ];
+
+  const carrinhoFresco = [...evidencias]
+    .reverse()
+    .find((e) => e.toolNome === "consultar_carrinho" && e.output && typeof e.output === "object");
+  if (carrinhoFresco) {
+    const output = carrinhoFresco.output as { itens: Array<{ nome_produto: string; quantidade: number }>; subtotal: number };
+    const resumoItens = output.itens.map((i) => `${i.quantidade}x ${i.nome_produto}`).join(", ") || "nenhum item (carrinho ficou vazio)";
+    afirmacoes.push({
+      texto: `O carrinho atual tem: ${resumoItens}. Subtotal: R$ ${formatarReal(output.subtotal)}.`,
+      tipo: "generico",
+      fonte_tool: "consultar_carrinho",
+      fonte_tool_execucao_id: carrinhoFresco.execucaoId,
+    });
+  }
+
+  return { ...relatorio, ambiguidade: { tipo: "nenhuma" }, afirmacoes };
+}
+
 /**
  * Mesma rede de segurança de `sintetizarAfirmacaoDeMutacaoCarrinho`, mas
  * pra "criar_pedido" (tarefa 0055) — checada primeiro e separadamente
@@ -272,6 +449,7 @@ Regras obrigatórias:
 - Toda afirmação de tipo preco/disponibilidade/promocao/taxa/horario PRECISA citar um "fonte_tool_execucao_id" que exista EXATAMENTE (caractere por caractere) na lista de evidências abaixo. Nunca invente um id.
 - Se as evidências não bastam pra responder com certeza, ou se há mais de uma opção plausível (ex.: dois produtos parecidos), defina "ambiguidade.tipo" adequadamente e liste até 3 opções em "ambiguidade.opcoes" — e nesse caso não afirme nada arriscado.
 - Se a pergunta era só social (saudação etc), retorne "afirmacoes":[] e "ambiguidade":{"tipo":"nenhuma"}.
+- O campo "texto" de cada afirmação deve soar como uma nota factual natural em português, do jeito que um atendente humano anotaria pra si mesmo — NUNCA como uma mensagem de sistema, log ou motor de busca (nunca escreva algo como "não encontrada nos resultados", "indisponível ou não cadastrado", "sem resultados para a query"). Se o resultado foi negativo, descreva o fato direto (ex.: "Não há pizza de calabresa no cardápio").
 - Responda APENAS o JSON, sem markdown, sem texto antes ou depois.
 
 Pergunta do cliente: "${pergunta}"
@@ -425,12 +603,18 @@ async function gerarRelatorio(
   );
   const relatorioBruto = parseRelatorio(respostaFinal.content, evidencias, tentativasFerramentas);
   // Ordem importa, do mais crítico pro menos crítico: pedido criado de
-  // verdade (dinheiro real) nunca pode ficar escondido, depois mutação de
-  // carrinho, depois resultado vazio — cada uma só entra em ação se a
-  // anterior não tiver preenchido nenhuma afirmação ainda.
+  // verdade (dinheiro real) nunca pode ficar escondido, depois pedido
+  // recusado por incompleto, depois mutação de carrinho, depois resultado
+  // vazio — cada uma só entra em ação se a anterior não tiver preenchido
+  // nenhuma afirmação ainda. Por último, o backstop genérico garante que
+  // nenhuma situação não coberta acima vire handoff silencioso.
   const relatorioComPedido = sintetizarAfirmacaoDePedidoCriado(relatorioBruto, evidencias);
-  const relatorioComCarrinho = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioComPedido, evidencias);
-  return sintetizarAfirmacoesDeResultadoVazio(relatorioComCarrinho, evidencias);
+  const relatorioComPedidoIncompleto = sintetizarAfirmacaoDePedidoIncompleto(relatorioComPedido, evidencias);
+  const relatorioComConfirmacaoExpirada = sintetizarAfirmacaoDeConfirmacaoExpirada(relatorioComPedidoIncompleto, evidencias);
+  const relatorioComCarrinho = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioComConfirmacaoExpirada, evidencias);
+  const relatorioComVazio = sintetizarAfirmacoesDeResultadoVazio(relatorioComCarrinho, evidencias);
+  const relatorioFiltrado = filtrarAfirmacoesComerciaisSemFonte(relatorioComVazio);
+  return garantirAmbiguidadeQuandoSemFatoNemSinal(relatorioFiltrado);
 }
 
 export async function investigar(
@@ -449,6 +633,21 @@ export async function investigar(
   const tools = getToolDefinitionsForLlm(ctx.permissoes);
   const evidencias: EvidenciaColetada[] = [];
 
+  // Semente determinística (não depende do modelo lembrar de chamar):
+  // se já existe um carrinho em construção com itens, sempre consulta o
+  // estado real ANTES de qualquer coisa, garantindo evidência fresca desta
+  // rodada pro caso o cliente peça um resumo/confirmação — episódio real
+  // (persona "simpático"): o Investigador resumiu o carrinho reaproveitando
+  // preços de rodadas anteriores em vez de rechamar "consultar_carrinho",
+  // e o veto de fonte (regra 1) derrubava a rodada pra handoff silencioso.
+  const pedidoAtual = await carregarPedidoEmConstrucao(ctx);
+  if (pedidoAtual.itens.length > 0) {
+    const seed = await executeTool("consultar_carrinho", {}, ctx);
+    if (seed.sucesso && seed.execucaoId) {
+      evidencias.push({ execucaoId: seed.execucaoId, toolNome: "consultar_carrinho", output: seed.output });
+    }
+  }
+
   const messages: ChatMessage[] = [
     { role: "system", content: montarPromptInvestigador(comportamento) },
     ...(contextoSessao ? [{ role: "system" as const, content: contextoSessao }] : []),
@@ -458,6 +657,32 @@ export async function investigar(
 
   let tentativasFerramentas = await rodarFerramentas(chat, tools, messages, evidencias, ctx, MAX_ITERACOES);
   let relatorio = await gerarRelatorio(chat, pergunta, evidencias, tentativasFerramentas);
+
+  // Retry determinístico pro veto de fonte comercial (regra 1): em vez de
+  // aceitar de cara "afirmação sem fonte → confiança baixa → handoff
+  // silencioso" (episódios reais: personas "confuso"/"indeciso" reaproveitando
+  // preço/disponibilidade de rodadas anteriores), dá ao Investigador uma
+  // chance real e explícita de rechecar exatamente essas afirmações com uma
+  // ferramenta antes de finalizar — mesmo padrão já usado abaixo pra
+  // confiança "média".
+  const semFonteAntesDaRetentativa = afirmacoesComerciaisSemFonte(relatorio);
+  if (semFonteAntesDaRetentativa.length > 0 && relatorio.ambiguidade.tipo === "nenhuma") {
+    messages.push({
+      role: "user",
+      content: `As seguintes afirmações não citam uma ferramenta chamada NESTA rodada, então não podem ser usadas como estão: ${semFonteAntesDaRetentativa
+        .map((a) => `"${a.texto}"`)
+        .join("; ")}. Chame agora a ferramenta certa pra confirmar cada uma com evidência fresca — nunca reaproveite um valor de rodadas anteriores da conversa. Se genuinamente não for possível confirmar, não afirme nada sobre isso.`,
+    });
+    tentativasFerramentas += await rodarFerramentas(
+      chat,
+      tools,
+      messages,
+      evidencias,
+      ctx,
+      MAX_ITERACOES_CONFIRMACAO,
+    );
+    relatorio = await gerarRelatorio(chat, pergunta, evidencias, tentativasFerramentas);
+  }
 
   // Confiança média → investigar mais (docs/product/05-ia-conhecimento.md
   // §5.8: "confiança média → investigar mais", não responder direto com

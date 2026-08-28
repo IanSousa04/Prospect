@@ -38,6 +38,16 @@ const IconIa = (
   </svg>
 );
 
+const IconWhatsapp = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="3" width="16" height="14" rx="3" />
+    <path d="M8 21l3.5-4h1L16 21" />
+    <circle cx="9" cy="10" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="10" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="10" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 export default function Topbar() {
   return (
     <div className="topbar">
@@ -65,6 +75,10 @@ export default function Topbar() {
         <NavLink to="/configuracoes-ia" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
           {IconIa}
           IA
+        </NavLink>
+        <NavLink to="/whatsapp" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+          {IconWhatsapp}
+          WhatsApp
         </NavLink>
       </nav>
       <div style={{ width: 22 }} />

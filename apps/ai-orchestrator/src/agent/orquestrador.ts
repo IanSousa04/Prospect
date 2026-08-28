@@ -1,9 +1,10 @@
-import type { ComportamentoJson } from "@prospect/shared";
+import type { ComportamentoJson, MotivoBloqueioAcao } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { criarHandoff } from "../handoffs.js";
 import type { ChatMessage } from "../llm/types.js";
 import type { ToolContext } from "../tools/index.js";
-import { investigar } from "./investigador.js";
+import { getRiscoFerramenta } from "../tools/index.js";
+import { investigar, type EvidenciaColetada } from "./investigador.js";
 import { carregarSessao, atualizarSessaoComEvidencias } from "./sessao.js";
 import { redigir } from "./atendente.js";
 import { computeConfianca } from "./confianca.js";
@@ -13,8 +14,10 @@ import {
   contemPromessaNaoSuportada,
   contemProdutoNaoVerificado,
   pedeCodigoDePedido,
+  contemConfirmacaoDePedidoNaoVerificada,
 } from "./verificacao.js";
 import { sanitizarFormatacaoWhatsapp } from "./sanitizacao.js";
+import { mensagemDePedidoConfirmado, type ResumoPedidoConfirmado } from "./confirmacao-pedido.js";
 import {
   buscarPromptInjectionEmEvidencia,
   relatorioObedeceuInjection,
@@ -32,6 +35,7 @@ import type {
   RelatorioInvestigacao,
   Confianca,
   AcaoDecidida,
+  Risco,
 } from "./types.js";
 
 export interface ProcessarMensagemParams {
@@ -65,17 +69,55 @@ async function registrarDecisao(params: {
   cobertura: number;
   acao: AcaoDecidida;
   relatorio: RelatorioInvestigacao;
+  /** Risco real desta rodada (tarefa 0023) — default "baixo" pros caminhos
+   * determinísticos que nunca chamam tool nenhuma (pedido de humano, hora,
+   * identidade). No caminho real de investigação, vem de
+   * `calcularRiscoMaximo(evidencias)`. */
+  risco?: Risco;
 }): Promise<void> {
   await supabaseAdmin.from("ia_decisoes").insert({
     empresa_id: params.ctx.empresaId,
     atendimento_id: params.ctx.atendimentoId,
     mensagem_id: params.ctx.mensagemId,
     confianca: params.confianca,
-    risco: "baixo", // MVP 1 nunca executa ação — risco real entra no MVP 2
+    risco: params.risco ?? "baixo",
     cobertura_ferramentas: params.cobertura,
     acao_decidida: params.acao,
     justificativa_estruturada_json: params.relatorio as unknown as object,
   });
+}
+
+const ORDEM_RISCO: Record<Risco, number> = { baixo: 0, medio: 1, alto: 2 };
+
+/** Risco real desta rodada (tarefa 0023) — o mais alto entre todas as
+ * tools de fato chamadas, via `getRiscoFerramenta` (ToolDefinicao.risco,
+ * declarado em cada tool mas nunca consultado antes desta tarefa). Função
+ * pura, testável sem banco. */
+export function calcularRiscoMaximo(evidencias: EvidenciaColetada[]): Risco {
+  let maior: Risco = "baixo";
+  for (const evidencia of evidencias) {
+    const risco = getRiscoFerramenta(evidencia.toolNome as Parameters<typeof getRiscoFerramenta>[0]);
+    if (ORDEM_RISCO[risco] > ORDEM_RISCO[maior]) maior = risco;
+  }
+  return maior;
+}
+
+/** Texto de handoff pro veto de alto risco — extraído em função pura pra
+ * ficar testável no gabarito sem precisar rodar a pipeline inteira. Cobre
+ * os 3 motivos de `avaliarRiscoAcao` (risco-acao.ts, tarefa 0023) de forma
+ * genérica por tool, não mais hardcoded pra "criar_pedido". */
+export function motivoBloqueioParaTexto(
+  toolNome: string,
+  detalhe: { motivo: MotivoBloqueioAcao; total?: number },
+): string {
+  switch (detalhe.motivo) {
+    case "empresa_exige_confirmacao_humana":
+      return `Empresa configurou que a ação "${toolNome}" pela IA sempre exige confirmação humana`;
+    case "valor_acima_do_limite_sem_handoff":
+      return `Valor envolvido (R$ ${(detalhe.total ?? 0).toFixed(2)}) acima do limite configurado pra "${toolNome}" sem handoff`;
+    case "status_pedido_nao_permitido":
+      return `Status atual do pedido não permite executar "${toolNome}" automaticamente, conforme configuração da empresa`;
+  }
 }
 
 /**
@@ -189,37 +231,45 @@ export async function processarMensagem(
   await atualizarSessaoComEvidencias(ctx, evidencias);
 
   // Veto determinístico, ANTES de qualquer decisão (mesmo espírito do guard
-  // de prompt injection abaixo): se a tool "criar_pedido" (tarefa 0055)
-  // recusou criar o pedido por exigência da própria empresa configurada em
-  // `ia_permissoes` (exige_confirmacao_humana ou valor acima do limite sem
-  // handoff, CLAUDE.md regra 6), isso é definitivo — nunca deixa o resto da
-  // pipeline (LLM decidindo relatório/resposta) tentar "resolver" ou
+  // de prompt injection abaixo): se QUALQUER tool de escrita (tarefa 0023 —
+  // generaliza o que a 0055 fez só pra "criar_pedido") recusou agir por
+  // exigência da própria empresa configurada em `ia_permissoes`
+  // (`avaliarRiscoAcao`, packages/shared/src/risco-acao.ts — exige
+  // confirmação humana, valor acima do limite, ou status de pedido não
+  // permitido, CLAUDE.md regra 6), isso é definitivo — nunca deixa o resto
+  // da pipeline (LLM decidindo relatório/resposta) tentar "resolver" ou
   // insistir. Handoff sempre, sem depender do modelo perceber isso sozinho.
-  const bloqueioCriarPedido = evidencias.find(
+  // Qualquer tool futura (cancelar_pedido, alterar_item) que devolva o
+  // mesmo formato `{erro:"confirmacao_humana_necessaria", motivo, ...}` é
+  // coberta automaticamente aqui, sem precisar editar este arquivo de novo.
+  const bloqueioAcaoAltoRisco = evidencias.find(
     (e) =>
-      e.toolNome === "criar_pedido" &&
       e.output &&
       typeof e.output === "object" &&
       (e.output as Record<string, unknown>).erro === "confirmacao_humana_necessaria",
   );
-  if (bloqueioCriarPedido) {
-    const detalhe = bloqueioCriarPedido.output as { motivo: string; total: number };
+  if (bloqueioAcaoAltoRisco) {
+    const detalhe = bloqueioAcaoAltoRisco.output as { motivo: MotivoBloqueioAcao; total?: number };
     const relatorioVazio: RelatorioInvestigacao = {
       sem_investigacao: false,
       afirmacoes: [],
       ambiguidade: { tipo: "nenhuma" },
       ferramentasChamadas: relatorio.ferramentasChamadas,
     };
-    await registrarDecisao({ ctx, confianca: "alta", cobertura: 0, acao: "handoff", relatorio: relatorioVazio });
+    await registrarDecisao({
+      ctx,
+      confianca: "alta",
+      cobertura: 0,
+      acao: "handoff",
+      relatorio: relatorioVazio,
+      risco: "alto",
+    });
     await criarHandoff(ctx.empresaId, {
       atendimento_id: ctx.atendimentoId,
       origem: "alto_risco",
-      motivo:
-        detalhe.motivo === "empresa_exige_confirmacao_humana"
-          ? "Empresa configurou que criação de pedido pela IA sempre exige confirmação humana"
-          : `Total do pedido (R$ ${detalhe.total.toFixed(2)}) acima do limite configurado pra criação automática sem handoff`,
-      resumo: `Cliente confirmou um pedido em construção, mas a criação automática foi bloqueada pela configuração de risco da empresa (CLAUDE.md regra 6 — ação irreversível com impacto financeiro).`,
-      acao_sugerida: "Revisar o carrinho no painel e criar o pedido manualmente, ou aprovar com o cliente antes.",
+      motivo: motivoBloqueioParaTexto(bloqueioAcaoAltoRisco.toolNome, detalhe),
+      resumo: `Cliente confirmou uma ação (${bloqueioAcaoAltoRisco.toolNome}), mas a execução automática foi bloqueada pela configuração de risco da empresa (CLAUDE.md regra 6 — ação irreversível ou de alto impacto).`,
+      acao_sugerida: "Revisar no painel e executar manualmente, ou aprovar com o cliente antes.",
       prioridade: "alta",
     });
     return { acao: "handoff", respostaTexto: null, confianca: "alta" };
@@ -268,6 +318,34 @@ export async function processarMensagem(
     // continua — o modelo seguiu a regra 5 do prompt do Investigador.
   }
 
+  // Confirmação de pedido criado (CLAUDE.md regra 6) — desvia do Atendente
+  // (LLM) inteiramente: a mensagem final pro cliente é montada em código só
+  // a partir do retorno real de "criar_pedido", nunca escrita livre por um
+  // segundo LLM que poderia omitir/errar um item ou, no episódio real que
+  // motivou isto, afirmar uma confirmação que nunca aconteceu de verdade
+  // (ver agent/confirmacao-pedido.ts). Mesmo padrão de curto-circuito
+  // determinístico já usado acima neste arquivo pros outros casos críticos.
+  const pedidoConfirmadoAgora = evidencias.find(
+    (e) =>
+      e.toolNome === "criar_pedido" &&
+      e.output &&
+      typeof e.output === "object" &&
+      (e.output as Record<string, unknown>).pedido_criado === true,
+  );
+  if (pedidoConfirmadoAgora) {
+    const resumo = pedidoConfirmadoAgora.output as unknown as ResumoPedidoConfirmado;
+    const texto = mensagemDePedidoConfirmado(resumo, params.usaEmoji);
+    await registrarDecisao({
+      ctx,
+      confianca: "alta",
+      cobertura: 0,
+      acao: "responder",
+      relatorio,
+      risco: "alto",
+    });
+    return { acao: "responder", respostaTexto: texto, confianca: "alta" };
+  }
+
   const confianca = computeConfianca(relatorio);
   const decisao = decidir(relatorio, confianca);
   const cobertura = new Set(
@@ -282,6 +360,7 @@ export async function processarMensagem(
     cobertura,
     acao: decisao.acao,
     relatorio,
+    risco: calcularRiscoMaximo(evidencias),
   });
 
   if (decisao.acao === "handoff") {
@@ -330,22 +409,29 @@ export async function processarMensagem(
   const produtoNaoVerificado = contemProdutoNaoVerificado(texto, evidencias);
   const promessaNaoSuportada = contemPromessaNaoSuportada(texto);
   const pedeCodigo = pedeCodigoDePedido(texto);
-  if (valorNaoVerificado || produtoNaoVerificado || promessaNaoSuportada || pedeCodigo) {
+  const confirmacaoNaoVerificada = contemConfirmacaoDePedidoNaoVerificada(texto, evidencias);
+  if (valorNaoVerificado || produtoNaoVerificado || promessaNaoSuportada || pedeCodigo || confirmacaoNaoVerificada) {
     const causa = valorNaoVerificado
       ? "continha um valor monetário não presente na evidência real coletada"
       : produtoNaoVerificado
         ? "citava em negrito um nome de produto que não bate com nenhum resultado real de busca no cardápio"
         : promessaNaoSuportada
           ? "prometia um formato/canal (PDF, arquivo, imagem, link) que o sistema não suporta"
-          : "pedia um número/código de pedido ao cliente, algo que o sistema resolve sozinho e o cliente não tem como fornecer";
-    await criarHandoff(ctx.empresaId, {
-      atendimento_id: ctx.atendimentoId,
-      origem: "falha_conhecimento",
-      motivo: "Verificação anti-alucinação reprovou a resposta gerada",
-      resumo: `Cliente perguntou: "${pergunta}". A resposta gerada ${causa} — descartada antes do envio.`,
-      acao_sugerida: "Responder manualmente.",
-      prioridade: "alta",
-    });
+          : pedeCodigo
+            ? "pedia um número/código de pedido ao cliente, algo que o sistema resolve sozinho e o cliente não tem como fornecer"
+            : "afirmava que o pedido foi confirmado/criado sem nenhuma chamada real de \"criar_pedido\" bem-sucedida nesta rodada";
+    await criarHandoff(
+      ctx.empresaId,
+      {
+        atendimento_id: ctx.atendimentoId,
+        origem: "falha_conhecimento",
+        motivo: "Verificação anti-alucinação reprovou a resposta gerada",
+        resumo: `Cliente perguntou: "${pergunta}". A resposta gerada ${causa} — descartada antes do envio.`,
+        acao_sugerida: "Responder manualmente.",
+        prioridade: "alta",
+      },
+      texto,
+    );
     return { acao: "handoff", respostaTexto: null, confianca: "baixa" };
   }
 

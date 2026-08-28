@@ -25,6 +25,7 @@ import type {
   TipoEntrega,
   TipoRelacao,
   TomDeVoz,
+  WhatsappConexao,
 } from "@prospect/shared";
 import { supabase } from "./supabase.js";
 
@@ -296,6 +297,19 @@ export const api = {
   async salvarIaConfiguracao(body: IaConfiguracaoResposta): Promise<IaConfiguracaoResposta> {
     const res = await authedFetch("/ia-configuracoes", { method: "PUT", body: JSON.stringify(body) });
     return res.json();
+  },
+
+  async buscarStatusWhatsapp(): Promise<Omit<WhatsappConexao, "empresa_id">> {
+    const res = await authedFetch("/whatsapp/status");
+    return res.json();
+  },
+
+  async desconectarWhatsapp(): Promise<void> {
+    await authedFetch("/whatsapp/desconectar", { method: "POST" });
+  },
+
+  async reconectarWhatsapp(): Promise<void> {
+    await authedFetch("/whatsapp/reconectar", { method: "POST" });
   },
 };
 

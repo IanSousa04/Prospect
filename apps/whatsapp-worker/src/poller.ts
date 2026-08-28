@@ -19,8 +19,8 @@ const INTERVALO_MS = 3000;
  * sem risco de cliente real receber algo errado. Mensagens de humano
  * SEMPRE são enviadas de verdade, independente dessa flag.
  */
-export function iniciarPoller(client: Client): void {
-  setInterval(async () => {
+export function iniciarPoller(client: Client): NodeJS.Timeout {
+  return setInterval(async () => {
     const { data: pendentes, error } = await supabaseAdmin
       .from("mensagens")
       .select("id, atendimento_id, remetente, conteudo, metadata_json, atendimentos(cliente_id, clientes(whatsapp_id, telefone))")

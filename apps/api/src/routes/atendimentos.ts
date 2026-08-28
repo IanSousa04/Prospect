@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type {
+  AguardandoConfirmacao,
   AtendimentoComContexto,
   EnderecoEntrega,
   FormaPagamento,
@@ -54,6 +55,24 @@ async function carregarPedidoIa(empresaId: string, atendimentoId: string): Promi
   return pedido ?? pedidoVazio();
 }
 
+/** Confirmação pendente do resumo final (tarefa 0022, `AguardandoConfirmacao`
+ * — ver packages/shared/src/pedido-ia.ts) — só leitura pra exibição no
+ * painel humano (CLAUDE.md regra 8); a API nunca cria/edita essa
+ * confirmação, só a IA (via consultar_carrinho/criar_pedido). */
+async function carregarConfirmacaoPendenteIa(
+  empresaId: string,
+  atendimentoId: string,
+): Promise<AguardandoConfirmacao | null> {
+  const { data } = await supabaseAdmin
+    .from("ia_sessoes")
+    .select("estado_json")
+    .eq("empresa_id", empresaId)
+    .eq("atendimento_id", atendimentoId)
+    .maybeSingle();
+
+  return (data?.estado_json as { aguardando_confirmacao?: AguardandoConfirmacao } | null)?.aguardando_confirmacao ?? null;
+}
+
 async function salvarPedidoIa(empresaId: string, atendimentoId: string, pedido: OrderContext): Promise<void> {
   const { data } = await supabaseAdmin
     .from("ia_sessoes")
@@ -64,11 +83,18 @@ async function salvarPedidoIa(empresaId: string, atendimentoId: string, pedido: 
 
   const estadoAtual = (data?.estado_json as Record<string, unknown> | null) ?? {};
 
+  // Um humano editando o carrinho (tarefa 0063) sempre invalida uma
+  // confirmação pendente (tarefa 0022) — o hash recalculado no lado da IA
+  // já não bateria mais de qualquer forma, mas limpar aqui evita que o
+  // painel continue mostrando "aguardando confirmação" pra um resumo que
+  // não existe mais.
+  const { aguardando_confirmacao: _descartado, ...estadoSemConfirmacao } = estadoAtual;
+
   await supabaseAdmin.from("ia_sessoes").upsert(
     {
       empresa_id: empresaId,
       atendimento_id: atendimentoId,
-      estado_json: { ...estadoAtual, pedido },
+      estado_json: { ...estadoSemConfirmacao, pedido },
     },
     { onConflict: "atendimento_id" },
   );
@@ -150,7 +176,8 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params;
 
     const pedido = await carregarPedidoIa(empresaId, id);
-    return resumoPedidoIa(pedido);
+    const aguardandoConfirmacao = await carregarConfirmacaoPendenteIa(empresaId, id);
+    return resumoPedidoIa(pedido, aguardandoConfirmacao);
   });
 
   // Adicionar item ao carrinho — mesma validação de preço/disponibilidade

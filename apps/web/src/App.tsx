@@ -6,6 +6,7 @@ import ProdutoEditor from "./pages/ProdutoEditor.js";
 import Clientes from "./pages/Clientes.js";
 import Analytics from "./pages/Analytics.js";
 import ConfiguracoesIa from "./pages/ConfiguracoesIa.js";
+import WhatsApp from "./pages/WhatsApp.js";
 import Login from "./pages/Login.js";
 import { useSession } from "./lib/useSession.js";
 
@@ -33,6 +34,7 @@ export default function App() {
       <Route path="/clientes" element={<Clientes />} />
       <Route path="/analytics" element={<Analytics />} />
       <Route path="/configuracoes-ia" element={<ConfiguracoesIa />} />
+      <Route path="/whatsapp" element={<WhatsApp />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

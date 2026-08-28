@@ -821,6 +821,19 @@ export default function Atendimento() {
                 </select>
               </div>
 
+              {carrinhoIa.aguardando_confirmacao && (
+                <div className="carrinho-pendencias">
+                  <div className="ctx-sublabel">Confirmação (tarefa 0022)</div>
+                  <div className="tag-pill tag-pill-pendencia">
+                    Aguardando confirmação do cliente — expira às{" "}
+                    {new Date(carrinhoIa.aguardando_confirmacao.expiraEm).toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              )}
+
               {carrinhoIa.pendencias.length > 0 && (
                 <div className="carrinho-pendencias">
                   <div className="ctx-sublabel">Falta pro pedido fechar</div>
@@ -834,7 +847,8 @@ export default function Atendimento() {
                 </div>
               )}
               <div className="carrinho-hint">
-                Editável por você e pela IA no mesmo estado — vira pedido só quando confirmado.
+                Editável por você e pela IA no mesmo estado — vira pedido só quando confirmado. Editar
+                qualquer coisa aqui invalida automaticamente uma confirmação pendente do cliente.
               </div>
             </Secao>
           )}

@@ -71,10 +71,13 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 - [x] **[P1] Cliente manda imagem/áudio → handoff em vez de silêncio.** `SP: 3` ([detalhes](tasks/0009-midia_handoff.md))
 - [x] **[P1] Guard determinístico contra prompt injection via conhecimento/resultados de ferramenta.** `SP: 8` ([detalhes](tasks/0010-guard_prompt_injection.md))
 - [x] **[P1] `ia_sessoes` em uso (memória derivada da conversa).** `SP: 5` ([detalhes](tasks/0011-ia_sessoes.md))
+- [x] **[P1] Filtrar afirmação comercial especulativa sem fonte + verificação aritmética de valor somado (handoff silencioso).** `SP: 3` ([detalhes](tasks/0074-verificacao_aritmetica_resumo_carrinho.md))
 
 ---
 
 ## 2. Atendimento (Kanban / conversa) — P2
+
+O Kanban de atendimento (`apps/web/src/pages/Kanban.tsx`) está sendo unificado com o status do pedido num board operacional único — ver seção 6 (tarefas 0064-0068, 0072).
 
 - [x] **[P2] Finalizar atendimento.** `SP: 2` ([detalhes](tasks/0013-finalizar_atendimento.md))
 - [x] **[P2] Devolver atendimento pra IA.** `SP: 2` ([detalhes](tasks/0014-devolver_atendimento.md))
@@ -104,8 +107,8 @@ Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** um
 
 Depende do ciclo comercial mínimo (3.1) estar rodando: risco real na matriz de decisão precisa existir antes/junto das próximas tools de escrita ligarem em produção real (é o que decide se uma ação irreversível vira handoff); confirmação humana e as tools `adicionar_item`/`alterar_item`/`cancelar_pedido`/`atualizar_cliente` expandem a superfície de escrita depois que o padrão estiver validado por `criar_pedido`.
 
-- [ ] **[P2] Risco real na matriz de decisão + enforcement das permissões de escrita.** `SP: 8` ([detalhes](tasks/0023-risco_matriz_decisao.md))
-- [ ] **[P2] Fluxo de confirmação humana fora do texto livre.** `SP: 8` ([detalhes](tasks/0022-confirmacao_humana.md))
+- [x] **[P2] Risco real na matriz de decisão + enforcement das permissões de escrita.** `SP: 8` ([detalhes](tasks/0023-risco_matriz_decisao.md))
+- [x] **[P2] Fluxo de confirmação humana fora do texto livre.** `SP: 8` ([detalhes](tasks/0022-confirmacao_humana.md))
 - [ ] **[P2] Tools `adicionar_item` / `alterar_item`.** `SP: 8` ([detalhes](tasks/0057-adicionar_alterar_item.md))
 - [ ] **[P2] Tool `cancelar_pedido`.** `SP: 3` ([detalhes](tasks/0058-cancelar_pedido.md))
 - [ ] **[P2] Tool `atualizar_cliente`.** `SP: 2` ([detalhes](tasks/0059-atualizar_cliente.md))
@@ -115,6 +118,7 @@ Depende do ciclo comercial mínimo (3.1) estar rodando: risco real na matriz de 
 Sem dependência forte do ciclo comercial — podem entrar em paralelo a qualquer momento. Itens já concluídos ficam registrados aqui por serem da mesma família (qualidade da resposta da IA).
 
 - [ ] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
+- [ ] **[P2] Tool `consultar_prazo_entrega` + config de prazo padrão vs. calculado (toggle na UI).** `SP: 5` ([detalhes](tasks/0075-prazo_entrega.md))
 - [x] **Agrupar mensagens rápidas do cliente antes de responder.** `SP: 3` ([detalhes](tasks/0030-agrupar_mensagens.md))
 - [x] **Formatação das respostas deve usar a sintaxe real do WhatsApp, não Markdown genérico.** `SP: 2` ([detalhes](tasks/0031-formatacao_whatsapp.md))
 - [ ] **[P2] Cache.** `SP: 5` ([detalhes](tasks/0025-cache.md))
@@ -138,6 +142,7 @@ Independente do ciclo comercial. Ordem sugerida: topologia do orchestrator antes
 - [x] **[P2] Contraste ruim em botões e outros elementos.** `SP: 2` ([detalhes](tasks/0035-contraste_botoes.md))
 - [x] **[P2] Tema — trocado de dark-only pra light-only (decisão do usuário, não os dois com toggle).** `SP: 3` ([detalhes](tasks/0036-tema_light.md))
 - [x] **Cores de status — regra permanente de uso consistente em toda a plataforma.** `SP: 2` ([detalhes](tasks/0037-cores_status.md))
+- [ ] **[P2] Botão "Devolver pra IA" — cor própria com bom contraste (ex.: azul).** `SP: 2` ([detalhes](tasks/0071-cor_botao_devolver_ia.md))
 
 ## 5. Catálogo (Fase 2) — P2
 
@@ -147,6 +152,16 @@ Independente do ciclo comercial. Ordem sugerida: topologia do orchestrator antes
 
 ## 6. Pedidos (Fase 3) — P2
 
+Board operacional unificado adicionado em 2026-08-27 (pedido do usuário): hoje o Kanban de atendimento e o status do pedido são conceitos separados, e um pedido some do radar operacional assim que o atendimento é marcado resolvido. Ordem de dependência: 0064/0065 (simplificação dos status, podem ser feitas em paralelo) → 0066 (derivação do estágio unificado + arquivamento) → 0067 (Kanban reconstruído) → 0068 (drag-and-drop) / 0072 (teste de carga, testar a versão final).
+
+- [ ] **[P2] Mesclar "IA solicitou humano"/"Cliente solicitou humano" num único status "Solicitou humano".** `SP: 3` ([detalhes](tasks/0064-mesclar_solicitou_humano.md))
+- [ ] **[P2] Simplificar `StatusPedido` (aberto/confirmado/em_preparo → `em_preparacao`; pronto/saiu_para_entrega → `pronto`).** `SP: 3` ([detalhes](tasks/0065-simplificar_status_pedido.md))
+- [ ] **[P2] Estágio operacional unificado (deriva o estágio do board a partir de atendimento + pedido) + arquivamento.** `SP: 8` ([detalhes](tasks/0066-estagio_operacional_unificado.md))
+- [ ] **[P2] Reconstruir o Kanban com as colunas unificadas (conversa + pedido).** `SP: 8` ([detalhes](tasks/0067-kanban_unificado.md))
+- [ ] **[P2] Mover cards entre colunas no Kanban via drag-and-drop, alterando o status real.** `SP: 8` ([detalhes](tasks/0068-kanban_drag_and_drop.md))
+- [ ] **[P2] Página com filtros pra listar todos os pedidos.** `SP: 5` ([detalhes](tasks/0069-pagina_listagem_pedidos.md))
+- [ ] **[P2] Impressão do pedido em modo bobina (cozinha/entregador), só frontend.** `SP: 5` ([detalhes](tasks/0070-impressao_pedido_bobina.md))
+- [ ] **[P2] Teste de performance do Kanban com muitas conversas.** `SP: 3` ([detalhes](tasks/0072-teste_performance_kanban.md))
 - [ ] **[P2] Não dá pra editar itens de um pedido já criado** `SP: 5` ([detalhes](tasks/0041-editar_itens_pedido.md))
 - [ ] **[P2] Gateway de pagamento real** `SP: 13` ([detalhes](tasks/0042-gateway_pagamento.md))
 - [ ] **[P2] Página pública de cardápio/pedido (link direto, sem WhatsApp).** `SP: 8` ([detalhes](tasks/0043-pagina_publica_pedido.md))
@@ -172,3 +187,4 @@ Independente do ciclo comercial. Ordem sugerida: topologia do orchestrator antes
 - [ ] **[P2] Nenhuma política de retenção/expurgo de dados pessoais de cliente** `SP: 5` ([detalhes](tasks/0051-retencao_dados.md))
 - [x] **[P2] Multi-tenancy — banco compartilhado com RLS.** `SP: 8` ([detalhes](tasks/0052-multi_tenancy_rls.md))
 - [ ] **[P2] Simulador da IA.** `SP: 8` ([detalhes](tasks/0012-simulador_ia.md))
+- [x] **[P2] Simulação de atendimentos completos com personas variadas.** `SP: 5` ([detalhes](tasks/0073-simulacao_personas_atendimento.md))
