@@ -4,6 +4,8 @@ import type {
   Categoria,
   ClienteComMetricas,
   ComportamentoJson,
+  ConhecimentoItem,
+  ConhecimentoItemInput,
   EnderecoEntrega,
   FluxoPedidoConfig,
   FormaPagamento,
@@ -161,6 +163,25 @@ export const api = {
   async criarCategoria(nome: string): Promise<Categoria> {
     const res = await authedFetch("/categorias", { method: "POST", body: JSON.stringify({ nome }) });
     return res.json();
+  },
+
+  async listarConhecimento(): Promise<ConhecimentoItem[]> {
+    const res = await authedFetch("/conhecimento");
+    return res.json();
+  },
+
+  async criarConhecimento(body: ConhecimentoItemInput): Promise<ConhecimentoItem> {
+    const res = await authedFetch("/conhecimento", { method: "POST", body: JSON.stringify(body) });
+    return res.json();
+  },
+
+  async atualizarConhecimento(id: string, body: Partial<ConhecimentoItemInput>): Promise<ConhecimentoItem> {
+    const res = await authedFetch(`/conhecimento/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+    return res.json();
+  },
+
+  async removerConhecimento(id: string): Promise<void> {
+    await authedFetch(`/conhecimento/${id}`, { method: "DELETE" });
   },
 
   async listarProdutos(): Promise<(Produto & { categoria: Pick<Categoria, "id" | "nome"> | null })[]> {

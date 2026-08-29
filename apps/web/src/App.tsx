@@ -3,6 +3,7 @@ import Kanban from "./pages/Kanban.js";
 import Atendimento from "./pages/Atendimento.js";
 import Catalogo from "./pages/Catalogo.js";
 import ProdutoEditor from "./pages/ProdutoEditor.js";
+import Conhecimento from "./pages/Conhecimento.js";
 import Clientes from "./pages/Clientes.js";
 import Analytics from "./pages/Analytics.js";
 import ConfiguracoesIa from "./pages/ConfiguracoesIa.js";
@@ -31,6 +32,7 @@ export default function App() {
       <Route path="/atendimentos/:id" element={<Atendimento />} />
       <Route path="/catalogo" element={<Catalogo />} />
       <Route path="/catalogo/produtos/:id" element={<ProdutoEditor />} />
+      <Route path="/conhecimento" element={<Conhecimento />} />
       <Route path="/clientes" element={<Clientes />} />
       <Route path="/analytics" element={<Analytics />} />
       <Route path="/configuracoes-ia" element={<ConfiguracoesIa />} />

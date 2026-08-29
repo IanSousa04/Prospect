@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./catalogo.js";
 export * from "./pedidos.js";
 export * from "./comercial.js";
+export * from "./conhecimento.js";
 export * from "./ia-config.js";
 export * from "./ia-permissoes.js";
 export * from "./handoffs-schema.js";
