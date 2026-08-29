@@ -86,6 +86,26 @@ export const CENARIOS_PERSONAS: CenarioPersonaDef[] = [
     },
   },
   {
+    // Reproduz o episódio real que motivou o gate determinístico de
+    // confirmação (deteccao.ts, confirmaResumoPendente): cliente responde
+    // ao resumo final só com um monossílabo curto ("Sim"), sem repetir
+    // nenhum detalhe do pedido — antes desta tarefa, isso podia terminar em
+    // handoff mudo (Investigador não chamava "criar_pedido", Atendente
+    // escrevia "Pedido confirmado!" sem fonte real, verificação
+    // anti-alucinação descartava tudo). handoffEsperado: false porque uma
+    // confirmação curta e inequívoca deve SEMPRE fechar o pedido, nunca
+    // escalar.
+    handoffEsperado: false,
+    persona: {
+      nome: "confirma_com_monossilabo",
+      maxTurnos: 8,
+      objetivo:
+        "Pedir um X-Bacon, responder objetivamente qualquer pergunta sobre entrega/retirada e forma de pagamento assim que ela vier, e quando a IA apresentar o resumo FINAL completo (com total e pedindo pra confirmar), responder só com um 'Sim' seco (sem repetir itens, sem adicionar mais nada).",
+      promptSistema:
+        "Você é um cliente direto. Peça um X-Bacon. Se a IA perguntar se é entrega ou retirada, responda só 'retirada'. Se perguntar a forma de pagamento, responda só 'dinheiro'. Se perguntar qualquer outra coisa objetiva relacionada ao pedido, responda de forma curta e direta. Só quando a IA mostrar o RESUMO FINAL do pedido (com o total em R$ e perguntando se pode confirmar/fechar), responda EXATAMENTE 'Sim' — só essa palavra, nada mais, sem repetir o pedido, sem cortesias, sem explicação. Não use esse 'Sim' seco pra responder a nenhuma outra pergunta (tipo de entrega, pagamento, endereço) — só pro resumo final.",
+    },
+  },
+  {
     // Controle positivo: único gatilho de handoff 100% determinístico
     // (clientePediuHumano em agent/deteccao.ts, não depende do LLM) — prova
     // que o script continua pegando regressão de "handoff que deveria

@@ -180,7 +180,10 @@ export async function rodarCenarioPersona(def: CenarioPersonaDef): Promise<Resul
           if (!pedido.tipo_entrega) {
             motivosFalha.push("pedido criado no banco sem 'tipo_entrega' definido — IA confirmou sem ter perguntado entrega/retirada");
           }
-          if (!pedido.forma_pagamento) {
+          // Só exige forma_pagamento quando a empresa de teste pergunta essa
+          // etapa (motor de etapas configurável, tasks/0056/0077/0078) —
+          // desligada na config, o pedido fecha sem ela por design.
+          if (config.ctx.fluxoPedido.perguntar_forma_pagamento && !pedido.forma_pagamento) {
             motivosFalha.push("pedido criado no banco sem 'forma_pagamento' definido — IA confirmou sem ter perguntado forma de pagamento");
           }
           if (pedido.tipo_entrega === "entrega" && !pedido.endereco_json) {

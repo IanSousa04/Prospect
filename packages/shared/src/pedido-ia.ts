@@ -14,6 +14,7 @@
 // válido e COMO calcular subtotal/pendências a partir dele.
 import type { EnderecoEntrega, FormaPagamento, TipoEntrega } from "./pedidos.js";
 import type { ItemMontado } from "@prospect/pedidos-core";
+import { FLUXO_PEDIDO_CONFIG_PADRAO, type FluxoPedidoConfig } from "./ia-config.js";
 
 export type StatusPedidoIa =
   | "novo"
@@ -123,26 +124,48 @@ export function encontrarLinhaEquivalente(
  * carrinho (adicionar/remover/atualizar). Qualquer mutação invalida uma
  * confirmação anterior (CLAUDE.md regra 6: nunca herdar confirmação de um
  * carrinho que já mudou) e ajusta o status: carrinho esvaziado volta pra
- * "novo", primeiro item sai de "novo" pra "montando". */
-export function aplicarMutacaoCarrinho(pedido: OrderContext, novosItens: ItemCarrinho[]): OrderContext {
+ * "novo", primeiro item sai de "novo" pra "montando". Quando a empresa só
+ * oferece um tipo de entrega (config), o primeiro item já atribui esse tipo
+ * automaticamente — nunca pergunta algo que só tem uma resposta possível. */
+export function aplicarMutacaoCarrinho(
+  pedido: OrderContext,
+  novosItens: ItemCarrinho[],
+  config: FluxoPedidoConfig = FLUXO_PEDIDO_CONFIG_PADRAO,
+): OrderContext {
+  const tipoAuto = tipoEntregaAutoAtribuido(config);
   return {
     ...pedido,
     itens: novosItens,
     carrinho_confirmado: false,
+    tipo_entrega: pedido.tipo_entrega ?? (novosItens.length > 0 ? tipoAuto : null),
     status: novosItens.length === 0 ? "novo" : pedido.status === "novo" ? "montando" : pedido.status,
   };
 }
 
-export function informacoesPendentes(pedido: OrderContext): InformacaoPendente[] {
+/** Etapa de tipo de entrega: some da lista de pendências quando a empresa
+ * só oferece uma opção (config, tasks/0056/0077) — nesse caso o pedido já
+ * deveria ter nascido com esse tipo pré-atribuído (ver
+ * `tipoEntregaAutoAtribuido`), então chegar aqui sem `tipo_entrega` definido
+ * só acontece num pedido antigo/editado manualmente; mesmo assim não faz
+ * sentido perguntar algo que só tem uma resposta possível. */
+function tipoEntregaPendente(pedido: OrderContext, config: FluxoPedidoConfig): boolean {
+  if (config.tipos_entrega_oferecidos.length === 1) return false;
+  return !pedido.tipo_entrega;
+}
+
+export function informacoesPendentes(
+  pedido: OrderContext,
+  config: FluxoPedidoConfig = FLUXO_PEDIDO_CONFIG_PADRAO,
+): InformacaoPendente[] {
   // Sem nenhum item, nada mais importa ainda — não faz sentido perguntar
   // forma de pagamento de um carrinho vazio.
   if (pedido.itens.length === 0) return ["produtos"];
 
   const pendentes: InformacaoPendente[] = [];
   if (!pedido.carrinho_confirmado) pendentes.push("confirmar_carrinho");
-  if (!pedido.tipo_entrega) pendentes.push("tipo_entrega");
+  if (tipoEntregaPendente(pedido, config)) pendentes.push("tipo_entrega");
   if (pedido.tipo_entrega === "entrega" && !pedido.endereco) pendentes.push("endereco");
-  if (!pedido.forma_pagamento) pendentes.push("forma_pagamento");
+  if (config.perguntar_forma_pagamento && !pedido.forma_pagamento) pendentes.push("forma_pagamento");
   // Confirmação final só entra na lista quando não resta mais nenhuma outra
   // pendência — nunca em paralelo com informação de carrinho/entrega/
   // pagamento ainda faltando (CLAUDE.md regra 6: nunca finalizar por
@@ -150,6 +173,15 @@ export function informacoesPendentes(pedido: OrderContext): InformacaoPendente[]
   if (pendentes.length === 0 && !pedido.confirmado) pendentes.push("confirmacao_final");
 
   return pendentes;
+}
+
+/** Quando a empresa só oferece um tipo de entrega (config), o carrinho já
+ * nasce com esse tipo atribuído — a IA nunca chega a perguntar algo que só
+ * tem uma resposta possível (mesmo espírito de `tipoEntregaPendente`
+ * acima). Chamado por `aplicarMutacaoCarrinho` (tools/carrinho.ts) sempre
+ * que o carrinho ganha o primeiro item. */
+export function tipoEntregaAutoAtribuido(config: FluxoPedidoConfig): TipoEntrega | null {
+  return config.tipos_entrega_oferecidos.length === 1 ? config.tipos_entrega_oferecidos[0]! : null;
 }
 
 /** Registro determinístico de que o resumo final do pedido foi mostrado ao
@@ -235,11 +267,12 @@ export interface ResumoPedidoIa extends OrderContext {
 export function resumoPedidoIa(
   pedido: OrderContext,
   aguardandoConfirmacao: AguardandoConfirmacao | null = null,
+  config: FluxoPedidoConfig = FLUXO_PEDIDO_CONFIG_PADRAO,
 ): ResumoPedidoIa {
   return {
     ...pedido,
     subtotal: calcularSubtotal(pedido.itens),
-    pendencias: informacoesPendentes(pedido),
+    pendencias: informacoesPendentes(pedido, config),
     aguardando_confirmacao: aguardandoConfirmacao,
   };
 }

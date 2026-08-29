@@ -10,7 +10,13 @@ import { processarMensagem } from "../agent/orquestrador.js";
 import type { ResultadoOrquestracao } from "../agent/orquestrador.js";
 import type { ChatMessage } from "../llm/types.js";
 import type { ToolContext } from "../tools/index.js";
-import { mapaDePermissoes, ComportamentoJsonSchema, type IaPermissao } from "@prospect/shared";
+import {
+  mapaDePermissoes,
+  ComportamentoJsonSchema,
+  FluxoPedidoConfigSchema,
+  FLUXO_PEDIDO_CONFIG_PADRAO,
+  type IaPermissao,
+} from "@prospect/shared";
 
 export interface CasoE2E {
   nome: string;
@@ -171,11 +177,13 @@ export async function montarConfigDeProcessamentoDeTeste(
     .eq("empresa_id", empresaId);
   const { data: config } = await supabaseAdmin
     .from("ia_configuracoes")
-    .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json")
+    .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, fluxo_pedido_json")
     .eq("empresa_id", empresaId)
     .maybeSingle();
   const comportamentoParseado = ComportamentoJsonSchema.safeParse(config?.comportamento_json ?? {});
   const comportamento = comportamentoParseado.success ? comportamentoParseado.data : {};
+  const fluxoPedidoParseado = FluxoPedidoConfigSchema.safeParse(config?.fluxo_pedido_json ?? {});
+  const fluxoPedido = fluxoPedidoParseado.success ? fluxoPedidoParseado.data : FLUXO_PEDIDO_CONFIG_PADRAO;
 
   return {
     ctx: {
@@ -185,6 +193,7 @@ export async function montarConfigDeProcessamentoDeTeste(
       permissoes: mapaDePermissoes((permissoesRows ?? []) as IaPermissao[]),
       mensagemId: null,
       comportamento,
+      fluxoPedido,
     },
     tomDeVoz: (config?.tom_de_voz as "formal" | "neutro" | "amigavel" | "descontraido") ?? "amigavel",
     usaEmoji: config?.usa_emoji ?? true,

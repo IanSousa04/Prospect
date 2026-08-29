@@ -96,6 +96,35 @@ export function pedeIdentidade(texto: string): boolean {
 }
 
 /**
+ * Detecção de confirmação curta e inequívoca do resumo final do pedido
+ * ("sim", "confirmo", "pode confirmar", "fechar assim"...) — DETERMINÍSTICA,
+ * mesmo motivo das anteriores e do padrão consolidado pela indústria pra IA
+ * conversacional transacional (Rasa CALM trata a etapa de confirmação como
+ * um "slot" preenchido deterministicamente, nunca por interpretação livre
+ * do LLM a cada turno — ver a nota de pesquisa no plano desta tarefa).
+ *
+ * Episódio real que motivou isto: cliente respondeu só "Sim" a um resumo de
+ * pedido já apresentado, e o Investigador (LLM) não chamou "criar_pedido"
+ * nesta rodada — o Atendente escreveu "Pedido confirmado!" de boa-fé sem
+ * nenhuma criação real ter acontecido, e só a verificação anti-alucinação
+ * pegou isso, tarde demais (handoff mudo em vez de fechar o pedido).
+ *
+ * Ancorado na mensagem inteira (mesmo estilo de `pedeTempoReal`/
+ * `pedeIdentidade`) — nunca casa uma confirmação embutida no meio de uma
+ * mensagem mais longa/composta (ex.: "sim, mas quero trocar o pagamento"),
+ * que fica pro julgamento normal do Investigador. Só é consultado quando já
+ * existe uma confirmação pendente válida pro resumo mostrado (ver
+ * `orquestrador.ts`) — nunca dispara `criar_pedido` fora desse contexto.
+ */
+const PADROES_CONFIRMACAO_PEDIDO: RegExp[] = [
+  /^\s*(sim|confirmo|confirmado|isso\s+mesmo|[ée]\s+isso(\s+mesmo)?|isso\s+a[íi]|pode\s+confirmar|pode\s+mandar|pode\s+fechar|manda\s+ver|fechar\s+assim|fechado|pode|ok(ay)?|beleza|t[aá]\s+bom|t[aá]\s+certo|show)\s*[^A-Za-zÀ-ú0-9]*$/i,
+];
+
+export function confirmaResumoPendente(texto: string): boolean {
+  return PADROES_CONFIRMACAO_PEDIDO.some((regex) => regex.test(texto));
+}
+
+/**
  * Resposta FIXA sobre a identidade da IA — texto montado em código, nunca
  * pelo LLM. `nomeAssistente` vem de `ia_configuracoes.nome_assistente`
  * (dado real configurado pela empresa); quando não configurado, usa um

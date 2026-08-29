@@ -1,10 +1,12 @@
-import type { NomeFerramenta, ComportamentoJson } from "@prospect/shared";
+import type { NomeFerramenta, ComportamentoJson, FluxoPedidoConfig, AguardandoConfirmacao } from "@prospect/shared";
 import { getChatModel } from "../llm/client.js";
 import type { ChatMessage, ChatModel, ToolDefinitionForLlm } from "../llm/types.js";
 import { executeTool, getToolDefinitionsForLlm, type ToolContext } from "../tools/index.js";
 import type { Afirmacao, RelatorioInvestigacao, TipoAfirmacao } from "./types.js";
 import { computeConfianca, afirmacoesComerciaisSemFonte } from "./confianca.js";
-import { carregarPedidoEmConstrucao } from "./sessao.js";
+import { carregarPedidoEmConstrucao, carregarConfirmacaoPendente } from "./sessao.js";
+import { informacoesPendentes, calcularHashConfirmacao, type OrderContext } from "./pedido-contexto.js";
+import { afirmaPedidoConfirmado } from "./verificacao.js";
 
 const MAX_ITERACOES = 6;
 /** Segunda rodada, mais curta, só pra tentar confirmar com uma segunda
@@ -192,6 +194,48 @@ export function filtrarAfirmacoesComerciaisSemFonte(relatorio: RelatorioInvestig
   if (semFonte.size === 0) return relatorio;
 
   return { ...relatorio, afirmacoes: relatorio.afirmacoes.filter((a) => !semFonte.has(a)) };
+}
+
+/**
+ * Mesma ideia de `filtrarAfirmacoesComerciaisSemFonte`, mas pra uma lacuna
+ * diferente: o veto de fonte em `confianca.ts` só cobre `TIPOS_COMERCIAIS`
+ * (preco/disponibilidade/promocao/taxa/horario) — uma afirmação tipo
+ * "generico" dizendo algo como "o cliente confirmou o pedido" passa reto,
+ * mesmo sem nenhuma chamada real de "criar_pedido" bem-sucedida por trás
+ * dela. Sem este filtro, essa afirmação chegava ao Atendente, que escrevia
+ * "Pedido confirmado!" de boa-fé — só a última camada de defesa
+ * (`contemConfirmacaoDePedidoNaoVerificada`, verificacao.ts) pegava isso,
+ * tarde demais (handoff mudo em vez de simplesmente não afirmar nada aqui).
+ * Descarta só a(s) afirmação(ões) de confirmação sem fonte real — mantendo
+ * qualquer outra afirmação real da mesma rodada, mesmo espírito da função
+ * irmã acima.
+ */
+export function filtrarAfirmacoesDeConfirmacaoSemFonte(
+  relatorio: RelatorioInvestigacao,
+  evidencias: EvidenciaColetada[],
+): RelatorioInvestigacao {
+  if (relatorio.sem_investigacao) return relatorio;
+
+  const pedidoCriadoDeVerdade = new Set(
+    evidencias
+      .filter(
+        (e) =>
+          e.toolNome === "criar_pedido" &&
+          e.output &&
+          typeof e.output === "object" &&
+          (e.output as Record<string, unknown>).pedido_criado === true,
+      )
+      .map((e) => e.execucaoId),
+  );
+
+  const semFonteReal = new Set(
+    relatorio.afirmacoes.filter(
+      (a) => afirmaPedidoConfirmado(a.texto) && (!a.fonte_tool_execucao_id || !pedidoCriadoDeVerdade.has(a.fonte_tool_execucao_id)),
+    ),
+  );
+  if (semFonteReal.size === 0) return relatorio;
+
+  return { ...relatorio, afirmacoes: relatorio.afirmacoes.filter((a) => !semFonteReal.has(a)) };
 }
 
 /**
@@ -613,8 +657,39 @@ async function gerarRelatorio(
   const relatorioComConfirmacaoExpirada = sintetizarAfirmacaoDeConfirmacaoExpirada(relatorioComPedidoIncompleto, evidencias);
   const relatorioComCarrinho = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioComConfirmacaoExpirada, evidencias);
   const relatorioComVazio = sintetizarAfirmacoesDeResultadoVazio(relatorioComCarrinho, evidencias);
-  const relatorioFiltrado = filtrarAfirmacoesComerciaisSemFonte(relatorioComVazio);
+  const relatorioSemConfirmacaoFalsa = filtrarAfirmacoesDeConfirmacaoSemFonte(relatorioComVazio, evidencias);
+  const relatorioFiltrado = filtrarAfirmacoesComerciaisSemFonte(relatorioSemConfirmacaoFalsa);
   return garantirAmbiguidadeQuandoSemFatoNemSinal(relatorioFiltrado);
+}
+
+/**
+ * Gate de exposição (tasks/0056/0077/0078, motor de etapas configurável): a
+ * tool `criar_pedido` — a ação mais crítica de todo o sistema (CLAUDE.md
+ * regra 6) — só é oferecida como opção pro Investigador (LLM) quando TODAS
+ * as etapas do pedido já foram concluídas com êxito, nunca antes. Antes
+ * desta tarefa, a tool ficava sempre visível e só recusava internamente se
+ * chamada cedo demais ("a IA pode tentar e a tool recusa"); agora "a IA nem
+ * tem a opção disponível" — reduz drasticamente a chance de uma rodada
+ * terminar em alucinação de confirmação por decisão errada do modelo sobre
+ * quando chamar a tool. A tool em si (tools/pedido.ts) continua validando
+ * tudo de novo internamente (defesa em profundidade, nunca confia só em
+ * "não foi oferecida = seguro").
+ *
+ * Padrão a reaproduzir quando `cancelar_pedido`/`alterar_item` (tasks
+ * 0057/0058, ainda não implementadas) existirem: cada tool de escrita
+ * crítica declara sua própria condição de disponibilidade, filtrada aqui
+ * antes de cada rodada, em vez de reimplementar o filtro do zero.
+ */
+export function criarPedidoDisponivel(
+  pedido: OrderContext,
+  confirmacaoPendente: AguardandoConfirmacao | null,
+  config: FluxoPedidoConfig,
+): boolean {
+  const pendencias = informacoesPendentes(pedido, config);
+  if (pendencias.length !== 1 || pendencias[0] !== "confirmacao_final") return false;
+  if (!confirmacaoPendente) return false;
+  if (confirmacaoPendente.hash !== calcularHashConfirmacao(pedido)) return false;
+  return new Date(confirmacaoPendente.expiraEm).getTime() > Date.now();
 }
 
 export async function investigar(
@@ -630,7 +705,6 @@ export async function investigar(
   contextoSessao: string | null = null,
 ): Promise<ResultadoInvestigacao> {
   const chat = getChatModel();
-  const tools = getToolDefinitionsForLlm(ctx.permissoes);
   const evidencias: EvidenciaColetada[] = [];
 
   // Semente determinística (não depende do modelo lembrar de chamar):
@@ -640,6 +714,8 @@ export async function investigar(
   // (persona "simpático"): o Investigador resumiu o carrinho reaproveitando
   // preços de rodadas anteriores em vez de rechamar "consultar_carrinho",
   // e o veto de fonte (regra 1) derrubava a rodada pra handoff silencioso.
+  // Também é o que garante `confirmacaoPendente` fresca pro gate de
+  // exposição logo abaixo (consultar_carrinho é quem grava/refresca o hash).
   const pedidoAtual = await carregarPedidoEmConstrucao(ctx);
   if (pedidoAtual.itens.length > 0) {
     const seed = await executeTool("consultar_carrinho", {}, ctx);
@@ -647,6 +723,11 @@ export async function investigar(
       evidencias.push({ execucaoId: seed.execucaoId, toolNome: "consultar_carrinho", output: seed.output });
     }
   }
+
+  const confirmacaoPendente = await carregarConfirmacaoPendente(ctx);
+  const tools = getToolDefinitionsForLlm(ctx.permissoes).filter(
+    (tool) => tool.nome !== "criar_pedido" || criarPedidoDisponivel(pedidoAtual, confirmacaoPendente, ctx.fluxoPedido),
+  );
 
   const messages: ChatMessage[] = [
     { role: "system", content: montarPromptInvestigador(comportamento) },
@@ -656,6 +737,36 @@ export async function investigar(
   ];
 
   let tentativasFerramentas = await rodarFerramentas(chat, tools, messages, evidencias, ctx, MAX_ITERACOES);
+
+  // Semente determinística de FECHAMENTO (mesmo espírito da semente do
+  // início, mas no fim da rodada): quando o cliente resolve entrega e
+  // pagamento na MESMA mensagem que já tinha o carrinho pronto (ex.:
+  // "retirada, dinheiro"), o pedido pode chegar a pendências === apenas
+  // "confirmacao_final" só DEPOIS de "definir_tipo_entrega"/
+  // "definir_forma_pagamento" rodarem nesta própria rodada — a regra 11 do
+  // prompt pede pro Investigador rechamar "consultar_carrinho" antes de
+  // apresentar o resumo final, mas o modelo nem sempre obedece (episódio
+  // real: resumo completo foi mostrado, cliente confirmou com "Sim" na
+  // rodada seguinte, e não havia NENHUMA confirmação pendente gravada —
+  // `criarPedidoDisponivel` sempre falso porque "consultar_carrinho" nunca
+  // tinha rodado de novo depois das mutações). Sem isso, o gate
+  // determinístico de confirmação (deteccao.ts/orquestrador.ts) nunca tem o
+  // que validar na rodada seguinte, mesmo com um "Sim" inequívoco.
+  const houveMutacaoNestaRodada = evidencias.some((e) => FERRAMENTAS_CARRINHO_MUTAM.has(e.toolNome));
+  if (houveMutacaoNestaRodada) {
+    const pedidoAposMutacoes = await carregarPedidoEmConstrucao(ctx);
+    const pendenciasAposMutacoes = informacoesPendentes(pedidoAposMutacoes, ctx.fluxoPedido);
+    const ultimaEvidencia = evidencias[evidencias.length - 1];
+    const jaConsultouFresco = ultimaEvidencia?.toolNome === "consultar_carrinho";
+    if (pendenciasAposMutacoes.length === 1 && pendenciasAposMutacoes[0] === "confirmacao_final" && !jaConsultouFresco) {
+      const fechamento = await executeTool("consultar_carrinho", {}, ctx);
+      if (fechamento.sucesso && fechamento.execucaoId) {
+        evidencias.push({ execucaoId: fechamento.execucaoId, toolNome: "consultar_carrinho", output: fechamento.output });
+        tentativasFerramentas += 1;
+      }
+    }
+  }
+
   let relatorio = await gerarRelatorio(chat, pergunta, evidencias, tentativasFerramentas);
 
   // Retry determinístico pro veto de fonte comercial (regra 1): em vez de

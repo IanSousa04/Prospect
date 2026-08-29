@@ -3,9 +3,9 @@ import { supabaseAdmin } from "../lib/supabase.js";
 import { criarHandoff } from "../handoffs.js";
 import type { ChatMessage } from "../llm/types.js";
 import type { ToolContext } from "../tools/index.js";
-import { getRiscoFerramenta } from "../tools/index.js";
-import { investigar, type EvidenciaColetada } from "./investigador.js";
-import { carregarSessao, atualizarSessaoComEvidencias } from "./sessao.js";
+import { getRiscoFerramenta, executeTool } from "../tools/index.js";
+import { investigar, criarPedidoDisponivel, type EvidenciaColetada } from "./investigador.js";
+import { carregarSessao, atualizarSessaoComEvidencias, carregarPedidoEmConstrucao, carregarConfirmacaoPendente } from "./sessao.js";
 import { redigir } from "./atendente.js";
 import { computeConfianca } from "./confianca.js";
 import { decidir } from "./decisao.js";
@@ -30,6 +30,7 @@ import {
   mensagemSemTempoReal,
   pedeIdentidade,
   mensagemDeIdentidade,
+  confirmaResumoPendente,
 } from "./deteccao.js";
 import type {
   RelatorioInvestigacao,
@@ -214,6 +215,76 @@ export async function processarMensagem(
       respostaTexto: mensagemDeIdentidade(params.nomeAssistente, params.usaEmoji),
       confianca: "alta",
     };
+  }
+
+  // Gate determinístico da etapa de confirmação final (motor de etapas,
+  // tasks/0056/0077/0078) — resolve o episódio real que motivou este bloco:
+  // cliente respondeu só "Sim" a um resumo já apresentado, e o Investigador
+  // (LLM) simplesmente não chamou "criar_pedido" nesta rodada, deixando o
+  // Atendente escrever "Pedido confirmado!" sem nenhuma criação real ter
+  // acontecido — só a verificação anti-alucinação pegou isso, tarde demais
+  // (handoff mudo em vez de fechar o pedido). Mesmo padrão determinístico
+  // dos 3 blocos acima, aplicado à ação mais crítica do sistema: trata a
+  // etapa `confirmacao_final` como um "slot" preenchido por reconhecimento
+  // determinístico, não por interpretação livre do LLM a cada turno (mesmo
+  // padrão consolidado pela indústria pra IA conversacional transacional —
+  // Rasa CALM, ver nota de pesquisa no plano desta tarefa). Só dispara
+  // quando já existe uma confirmação pendente válida pro resumo mostrado
+  // (`criarPedidoDisponivel` — mesmo gate de exposição usado dentro de
+  // `investigar()`), então nunca cria um pedido "por engano" a partir de um
+  // "sim"/"ok" solto sem relação com pedido nenhum.
+  if (confirmaResumoPendente(pergunta)) {
+    const pedidoAtual = await carregarPedidoEmConstrucao(ctx);
+    const confirmacaoPendente = await carregarConfirmacaoPendente(ctx);
+
+    if (criarPedidoDisponivel(pedidoAtual, confirmacaoPendente, ctx.fluxoPedido)) {
+      const execucao = await executeTool("criar_pedido", {}, ctx);
+      const output = execucao.sucesso ? (execucao.output as Record<string, unknown>) : null;
+
+      if (output?.pedido_criado === true) {
+        // Mesma mensagem fixa (nunca escrita livre pelo Atendente) usada
+        // pelo caminho normal mais abaixo neste arquivo (pedidoConfirmadoAgora).
+        const resumo = output as unknown as ResumoPedidoConfirmado;
+        const texto = mensagemDePedidoConfirmado(resumo, params.usaEmoji);
+        const relatorioVazio: RelatorioInvestigacao = {
+          sem_investigacao: false,
+          afirmacoes: [],
+          ambiguidade: { tipo: "nenhuma" },
+          ferramentasChamadas: 1,
+        };
+        await registrarDecisao({ ctx, confianca: "alta", cobertura: 0, acao: "responder", relatorio: relatorioVazio, risco: "alto" });
+        return { acao: "responder", respostaTexto: texto, confianca: "alta" };
+      }
+
+      if (output?.erro === "confirmacao_humana_necessaria") {
+        const detalhe = output as { motivo: MotivoBloqueioAcao; total?: number };
+        const relatorioVazio: RelatorioInvestigacao = {
+          sem_investigacao: false,
+          afirmacoes: [],
+          ambiguidade: { tipo: "nenhuma" },
+          ferramentasChamadas: 1,
+        };
+        await registrarDecisao({ ctx, confianca: "alta", cobertura: 0, acao: "handoff", relatorio: relatorioVazio, risco: "alto" });
+        await criarHandoff(ctx.empresaId, {
+          atendimento_id: ctx.atendimentoId,
+          origem: "alto_risco",
+          motivo: motivoBloqueioParaTexto("criar_pedido", detalhe),
+          resumo: `Cliente confirmou o pedido ("${pergunta}"), mas a execução automática foi bloqueada pela configuração de risco da empresa (CLAUDE.md regra 6 — ação irreversível ou de alto impacto).`,
+          acao_sugerida: "Revisar no painel e executar manualmente, ou aprovar com o cliente antes.",
+          prioridade: "alta",
+        });
+        return { acao: "handoff", respostaTexto: null, confianca: "alta" };
+      }
+
+      // erro: "pedido_incompleto" / "confirmacao_expirada_ou_invalida" (ou
+      // qualquer outra coisa inesperada) — pode ser falso positivo do regex,
+      // ou o carrinho mudou entre o resumo e esta mensagem. Nunca trata como
+      // confirmação real: cai pro fluxo normal de `investigar()` como se
+      // este bloco não tivesse rodado — as redes de segurança já existentes
+      // (`sintetizarAfirmacaoDePedidoIncompleto`/
+      // `sintetizarAfirmacaoDeConfirmacaoExpirada`) cuidam de reapresentar o
+      // resumo atualizado.
+    }
   }
 
   // Memória curta entre turnos (ver agent/sessao.ts) — carregada antes da

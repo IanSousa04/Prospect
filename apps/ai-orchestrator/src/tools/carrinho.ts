@@ -91,10 +91,10 @@ registerTool({
       ? pedido.itens.map((item) => (item.linha_id === linhaExistente.linha_id ? itemAtualizado : item))
       : [...pedido.itens, itemAtualizado];
 
-    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, ctx.fluxoPedido);
     await salvarPedidoEmConstrucao(ctx, atualizado);
 
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, ctx.fluxoPedido);
   },
 });
 
@@ -114,10 +114,10 @@ registerTool({
     }
 
     const novosItens = pedido.itens.filter((item) => item.linha_id !== input.linha_id);
-    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, ctx.fluxoPedido);
     await salvarPedidoEmConstrucao(ctx, atualizado);
 
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, ctx.fluxoPedido);
   },
 });
 
@@ -156,10 +156,10 @@ registerTool({
 
     const itemAtualizado: ItemCarrinho = { ...montagem.itens[0]!, linha_id: input.linha_id };
     const novosItens = pedido.itens.map((item) => (item.linha_id === input.linha_id ? itemAtualizado : item));
-    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, ctx.fluxoPedido);
     await salvarPedidoEmConstrucao(ctx, atualizado);
 
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, ctx.fluxoPedido);
   },
 });
 
@@ -174,6 +174,12 @@ registerTool({
   },
   risco: "baixo",
   executor: async (input: { tipo_entrega: TipoEntrega }, ctx: ToolContext) => {
+    // Nunca aceita um tipo que a empresa não oferece (config, tasks/0056/
+    // 0077) — mesmo que o cliente peça, "de boa" não é uma opção real.
+    if (!ctx.fluxoPedido.tipos_entrega_oferecidos.includes(input.tipo_entrega)) {
+      return { erro: "tipo_entrega_nao_oferecido", tipos_oferecidos: ctx.fluxoPedido.tipos_entrega_oferecidos };
+    }
+
     const pedido = await carregarPedidoEmConstrucao(ctx);
     const atualizado = {
       ...pedido,
@@ -182,7 +188,7 @@ registerTool({
       carrinho_confirmado: false,
     };
     await salvarPedidoEmConstrucao(ctx, atualizado);
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, ctx.fluxoPedido);
   },
 });
 
@@ -227,7 +233,7 @@ registerTool({
       .eq("empresa_id", ctx.empresaId);
     if (erroCliente) console.error("[ai-orchestrator] falha ao salvar endereço padrão do cliente:", erroCliente);
 
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, ctx.fluxoPedido);
   },
 });
 
@@ -244,10 +250,16 @@ registerTool({
   },
   risco: "baixo",
   executor: async (input: { forma_pagamento: FormaPagamento }, ctx: ToolContext) => {
+    // Nunca aceita uma forma que a empresa não aceita (config, tasks/0056/
+    // 0078) — mesmo que o cliente peça, "de boa" não é uma opção real.
+    if (!ctx.fluxoPedido.formas_pagamento_aceitas.includes(input.forma_pagamento)) {
+      return { erro: "forma_pagamento_nao_aceita", formas_aceitas: ctx.fluxoPedido.formas_pagamento_aceitas };
+    }
+
     const pedido = await carregarPedidoEmConstrucao(ctx);
     const atualizado = { ...pedido, forma_pagamento: input.forma_pagamento, carrinho_confirmado: false };
     await salvarPedidoEmConstrucao(ctx, atualizado);
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, ctx.fluxoPedido);
   },
 });
 
@@ -260,7 +272,7 @@ registerTool({
   risco: "baixo",
   executor: async (_input: unknown, ctx: ToolContext) => {
     const pedido = await carregarPedidoEmConstrucao(ctx);
-    const pendencias = informacoesPendentes(pedido);
+    const pendencias = informacoesPendentes(pedido, ctx.fluxoPedido);
 
     // Toda vez que o resumo é consultado com o pedido pronto pra fechar
     // (só falta a confirmação final), registra/refresca determinístico
@@ -276,13 +288,13 @@ registerTool({
         resumoTexto: construirResumoTexto(pedido),
       };
       await salvarConfirmacaoPendente(ctx, confirmacao);
-      return resumoPedidoIa(pedido, confirmacao);
+      return resumoPedidoIa(pedido, confirmacao, ctx.fluxoPedido);
     }
 
     // Carrinho ainda não está pronto pra fechar — qualquer confirmação
     // pendente antiga não faz mais sentido (ex.: cliente reabriu o
     // carrinho depois de já ter visto um resumo).
     await salvarConfirmacaoPendente(ctx, undefined);
-    return resumoPedidoIa(pedido, null);
+    return resumoPedidoIa(pedido, null, ctx.fluxoPedido);
   },
 });

@@ -1,7 +1,10 @@
 import {
   mapaDePermissoes,
   ComportamentoJsonSchema,
+  FluxoPedidoConfigSchema,
+  FLUXO_PEDIDO_CONFIG_PADRAO,
   type ComportamentoJson,
+  type FluxoPedidoConfig,
   type IaPermissao,
   type NomeFerramenta,
 } from "@prospect/shared";
@@ -36,11 +39,12 @@ async function carregarConfigIa(empresaId: string): Promise<{
   usaEmoji: boolean;
   nomeAssistente: string | null;
   comportamento: ComportamentoJson;
+  fluxoPedido: FluxoPedidoConfig;
 }> {
   const [{ data: config }, { data: permissoesRows }] = await Promise.all([
     supabaseAdmin
       .from("ia_configuracoes")
-      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json")
+      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, fluxo_pedido_json")
       .eq("empresa_id", empresaId)
       .maybeSingle(),
     supabaseAdmin.from("ia_permissoes").select("*").eq("empresa_id", empresaId),
@@ -51,6 +55,7 @@ async function carregarConfigIa(empresaId: string): Promise<{
   // espírito de `isPermitido` nunca usar `?? true` (CLAUDE.md regra 2, ver
   // packages/shared/src/types.ts comentário em IaConfiguracao).
   const comportamentoParseado = ComportamentoJsonSchema.safeParse(config?.comportamento_json ?? {});
+  const fluxoPedidoParseado = FluxoPedidoConfigSchema.safeParse(config?.fluxo_pedido_json ?? {});
 
   return {
     // sem linha em ia_permissoes pra uma ferramenta = nenhuma permissão —
@@ -60,6 +65,7 @@ async function carregarConfigIa(empresaId: string): Promise<{
     usaEmoji: config?.usa_emoji ?? true,
     nomeAssistente: config?.nome_assistente ?? null,
     comportamento: comportamentoParseado.success ? comportamentoParseado.data : {},
+    fluxoPedido: fluxoPedidoParseado.success ? fluxoPedidoParseado.data : FLUXO_PEDIDO_CONFIG_PADRAO,
   };
 }
 
@@ -175,6 +181,7 @@ async function processarUmaMensagem(rajada: MensagemCliente[]): Promise<void> {
     permissoes: config.permissoes,
     mensagemId: gatilho.id,
     comportamento: config.comportamento,
+    fluxoPedido: config.fluxoPedido,
   };
 
   // Rajada vira um único turno — todas as mensagens acumuladas na janela de

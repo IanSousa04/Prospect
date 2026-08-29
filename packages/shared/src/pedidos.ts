@@ -11,8 +11,13 @@ export type StatusPedido =
   | "cancelado";
 
 export type OrigemPedido = "painel" | "ia" | "integracao_externa";
-export type TipoEntrega = "entrega" | "retirada";
-export type FormaPagamento = "dinheiro" | "cartao_credito" | "cartao_debito" | "pix" | "outro";
+
+export const TIPOS_ENTREGA = ["entrega", "retirada"] as const;
+export type TipoEntrega = (typeof TIPOS_ENTREGA)[number];
+
+export const FORMAS_PAGAMENTO = ["dinheiro", "cartao_credito", "cartao_debito", "pix", "outro"] as const;
+export type FormaPagamento = (typeof FORMAS_PAGAMENTO)[number];
+
 export type StatusPagamento = "pendente" | "pago" | "parcial" | "estornado";
 
 export interface EnderecoEntrega {

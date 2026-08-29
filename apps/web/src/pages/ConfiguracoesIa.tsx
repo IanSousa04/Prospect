@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
-import type { ComportamentoJson, NomeFerramenta, NumeroWhitelist, PrazoEntregaModo, TomDeVoz } from "@prospect/shared";
-import { PRAZO_ENTREGA_MODOS, TONS_DE_VOZ } from "@prospect/shared";
+import type {
+  ComportamentoJson,
+  FormaPagamento,
+  NomeFerramenta,
+  NumeroWhitelist,
+  PrazoEntregaModo,
+  TipoEntrega,
+  TomDeVoz,
+} from "@prospect/shared";
+import { FORMAS_PAGAMENTO, PRAZO_ENTREGA_MODOS, TIPOS_ENTREGA, TONS_DE_VOZ } from "@prospect/shared";
 import { api, type IaConfiguracaoResposta, type IaPermissaoOuPadrao } from "../lib/api.js";
 import Topbar from "../components/Topbar.js";
 import "./ConfiguracoesIa.css";
@@ -76,6 +84,19 @@ const LABELS_TOM_DE_VOZ: Record<TomDeVoz, string> = {
   descontraido: "Descontraído",
 };
 
+const LABELS_TIPO_ENTREGA: Record<TipoEntrega, string> = {
+  entrega: "Entrega",
+  retirada: "Retirada no local",
+};
+
+const LABELS_FORMA_PAGAMENTO: Record<FormaPagamento, string> = {
+  dinheiro: "Dinheiro",
+  cartao_credito: "Cartão de crédito",
+  cartao_debito: "Cartão de débito",
+  pix: "Pix",
+  outro: "Outro",
+};
+
 /** Campos booleanos de proatividade comercial — afetam se a IA busca/sugere
  * isso por conta própria (ver agent/investigador.ts regra 10 e
  * agent/atendente.ts) — ausente/true = comportamento atual, só false
@@ -130,6 +151,33 @@ export default function ConfiguracoesIa() {
   function alterarComportamento(campo: keyof ComportamentoJson, valor: boolean) {
     if (!config) return;
     salvarConfig({ ...config, comportamento_json: { ...config.comportamento_json, [campo]: valor } });
+  }
+
+  // Motor de etapas do pedido (tasks/0056/0077/0078) — nunca permite deixar
+  // a lista de tipos de entrega/formas de pagamento vazia (mesma regra do
+  // schema em packages/shared/src/ia-config.ts: pelo menos 1 opção).
+  function alternarTipoEntregaOferecido(tipo: TipoEntrega) {
+    if (!config) return;
+    const atual = config.fluxo_pedido.tipos_entrega_oferecidos;
+    const proximo = atual.includes(tipo) ? atual.filter((t) => t !== tipo) : [...atual, tipo];
+    if (proximo.length === 0) return;
+    salvarConfig({ ...config, fluxo_pedido: { ...config.fluxo_pedido, tipos_entrega_oferecidos: proximo } });
+  }
+
+  function alternarPerguntarFormaPagamento() {
+    if (!config) return;
+    salvarConfig({
+      ...config,
+      fluxo_pedido: { ...config.fluxo_pedido, perguntar_forma_pagamento: !config.fluxo_pedido.perguntar_forma_pagamento },
+    });
+  }
+
+  function alternarFormaPagamentoAceita(forma: FormaPagamento) {
+    if (!config) return;
+    const atual = config.fluxo_pedido.formas_pagamento_aceitas;
+    const proximo = atual.includes(forma) ? atual.filter((f) => f !== forma) : [...atual, forma];
+    if (proximo.length === 0) return;
+    salvarConfig({ ...config, fluxo_pedido: { ...config.fluxo_pedido, formas_pagamento_aceitas: proximo } });
   }
 
   async function alternarModoTeste() {
@@ -352,6 +400,67 @@ export default function ConfiguracoesIa() {
                 cálculo. Não esqueça de permitir a ferramenta "consultar_prazo_entrega" na seção de permissões
                 abaixo.
               </div>
+            </div>
+          )}
+        </section>
+
+        <section className="secao">
+          <div className="secao-titulo">Fluxo do pedido</div>
+          <p className="secao-desc">
+            Quais etapas a IA pergunta antes de fechar um pedido — cada empresa tem um negócio diferente (só
+            balcão, só delivery, não quer negociar pagamento pelo WhatsApp). {salvandoConfig && <span className="salvando-hint">salvando…</span>}
+          </p>
+
+          <div className="ferramenta-row">
+            <div className="campo-label">Tipos de entrega oferecidos</div>
+            <div className="ferramenta-desc">
+              Com só uma opção marcada, a IA nem pergunta — já assume esse tipo automaticamente.
+            </div>
+            {TIPOS_ENTREGA.map((tipo) => {
+              const ligado = config.fluxo_pedido.tipos_entrega_oferecidos.includes(tipo);
+              return (
+                <div className="ferramenta-top" key={tipo} style={{ marginTop: 8 }}>
+                  <div className="ferramenta-nome">{LABELS_TIPO_ENTREGA[tipo]}</div>
+                  <div className={`toggle ${ligado ? "on" : ""}`} onClick={() => alternarTipoEntregaOferecido(tipo)}>
+                    <div className="toggle-knob" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="ferramenta-row">
+            <div className="ferramenta-top">
+              <div>
+                <div className="ferramenta-nome">Perguntar forma de pagamento</div>
+                <div className="ferramenta-desc">
+                  Desligado: o pedido fecha sem essa pergunta (útil pra quem combina o pagamento por fora). O
+                  pagamento sempre é feito ao entregador/no balcão — nunca pela conversa.
+                </div>
+              </div>
+              <div
+                className={`toggle ${config.fluxo_pedido.perguntar_forma_pagamento ? "on" : ""}`}
+                onClick={alternarPerguntarFormaPagamento}
+              >
+                <div className="toggle-knob" />
+              </div>
+            </div>
+          </div>
+
+          {config.fluxo_pedido.perguntar_forma_pagamento && (
+            <div className="ferramenta-row">
+              <div className="campo-label">Formas de pagamento aceitas</div>
+              {FORMAS_PAGAMENTO.map((forma) => {
+                const ligado = config.fluxo_pedido.formas_pagamento_aceitas.includes(forma);
+                return (
+                  <div className="ferramenta-top" key={forma} style={{ marginTop: 8 }}>
+                    <div className="ferramenta-nome">{LABELS_FORMA_PAGAMENTO[forma]}</div>
+                    <div className={`toggle ${ligado ? "on" : ""}`} onClick={() => alternarFormaPagamentoAceita(forma)}>
+                      <div className="toggle-knob" />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>

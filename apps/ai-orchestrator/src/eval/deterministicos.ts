@@ -12,7 +12,7 @@ import {
   contemConfirmacaoDePedidoNaoVerificada,
 } from "../agent/verificacao.js";
 import { mensagemDePedidoConfirmado } from "../agent/confirmacao-pedido.js";
-import { pedeIdentidade, mensagemDeIdentidade, clientePediuHumano } from "../agent/deteccao.js";
+import { pedeIdentidade, mensagemDeIdentidade, clientePediuHumano, confirmaResumoPendente } from "../agent/deteccao.js";
 import {
   contemPromptInjection,
   buscarPromptInjectionEmEvidencia,
@@ -29,8 +29,17 @@ import {
   garantirAmbiguidadeQuandoSemFatoNemSinal,
   sintetizarAfirmacoesDeResultadoVazio,
   filtrarAfirmacoesComerciaisSemFonte,
+  filtrarAfirmacoesDeConfirmacaoSemFonte,
+  criarPedidoDisponivel,
 } from "../agent/investigador.js";
-import { avaliarRiscoCriarPedido, avaliarRiscoAcao, filtrarCamposPermitidos } from "@prospect/shared";
+import {
+  avaliarRiscoCriarPedido,
+  avaliarRiscoAcao,
+  filtrarCamposPermitidos,
+  FLUXO_PEDIDO_CONFIG_PADRAO,
+  type AguardandoConfirmacao,
+  type FluxoPedidoConfig,
+} from "@prospect/shared";
 import { calcularRiscoMaximo } from "../agent/orquestrador.js";
 import type { RelatorioInvestigacao } from "../agent/types.js";
 import {
@@ -1370,6 +1379,229 @@ export const CASOS_DETERMINISTICOS: CasoDeterministico[] = [
       return final.ambiguidade.tipo === "informacao_insuficiente" && final.afirmacoes.length === 0
         ? null
         : `esperado ambiguidade "informacao_insuficiente" sem afirmações, obtido ${JSON.stringify(final)}`;
+    },
+  },
+
+  // ============================================================================
+  // Motor de etapas configurável por empresa (tasks/0056/0077/0078) — cada
+  // empresa liga/desliga tipos de entrega e a pergunta de forma de pagamento
+  // conforme o próprio negócio, em vez de todo mundo ser forçado ao mesmo
+  // fluxo fixo.
+  // ============================================================================
+
+  {
+    nome: "informacoesPendentes: empresa com só 1 tipo de entrega oferecido nunca gera pendência 'tipo_entrega'",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const configSoRetirada: FluxoPedidoConfig = { ...FLUXO_PEDIDO_CONFIG_PADRAO, tipos_entrega_oferecidos: ["retirada"] };
+      const pendentes = informacoesPendentes({ ...pedidoVazio(), itens: [item] }, configSoRetirada);
+      return pendentes.includes("tipo_entrega")
+        ? "pediu tipo de entrega mesmo a empresa só oferecendo uma opção (deveria auto-atribuir, nunca perguntar)"
+        : null;
+    },
+  },
+  {
+    nome: "aplicarMutacaoCarrinho: empresa com só 1 tipo de entrega oferecido já atribui esse tipo automaticamente ao primeiro item",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const configSoEntrega: FluxoPedidoConfig = { ...FLUXO_PEDIDO_CONFIG_PADRAO, tipos_entrega_oferecidos: ["entrega"] };
+      const atualizado = aplicarMutacaoCarrinho(pedidoVazio(), [item], configSoEntrega);
+      return atualizado.tipo_entrega === "entrega" ? null : `esperado tipo_entrega auto-atribuído "entrega", obtido ${JSON.stringify(atualizado.tipo_entrega)}`;
+    },
+  },
+  {
+    nome: "informacoesPendentes: empresa com 2 tipos de entrega oferecidos continua perguntando normalmente (comportamento padrão preservado)",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pendentes = informacoesPendentes({ ...pedidoVazio(), itens: [item] }, FLUXO_PEDIDO_CONFIG_PADRAO);
+      return pendentes.includes("tipo_entrega") ? null : "deveria continuar perguntando tipo de entrega com 2 opções configuradas";
+    },
+  },
+  {
+    nome: "informacoesPendentes: empresa com 'perguntar_forma_pagamento' desligado nunca gera pendência 'forma_pagamento'",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const configSemPagamento: FluxoPedidoConfig = { ...FLUXO_PEDIDO_CONFIG_PADRAO, perguntar_forma_pagamento: false };
+      const pendentes = informacoesPendentes(
+        { ...pedidoVazio(), itens: [item], carrinho_confirmado: true, tipo_entrega: "retirada" },
+        configSemPagamento,
+      );
+      if (pendentes.includes("forma_pagamento")) return "pediu forma de pagamento mesmo com a pergunta desligada na config";
+      return pendentes.includes("confirmacao_final") ? null : `esperado confirmação final liberada sem pagamento, obtido ${JSON.stringify(pendentes)}`;
+    },
+  },
+
+  // ============================================================================
+  // Gate de exposição de 'criar_pedido' (criarPedidoDisponivel, investigador.ts)
+  // — a tool só fica visível pro LLM quando TODAS as etapas foram concluídas
+  // com êxito, nunca antes. Resolve a causa raiz do episódio real relatado:
+  // cliente respondeu só "Sim" a um resumo, e o Investigador nem chamou
+  // "criar_pedido" nesta rodada.
+  // ============================================================================
+
+  {
+    nome: "criarPedidoDisponivel: false quando ainda restam outras pendências (nunca só por ter itens no carrinho)",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pedido = { ...pedidoVazio(), itens: [item] };
+      const disponivel = criarPedidoDisponivel(pedido, null, FLUXO_PEDIDO_CONFIG_PADRAO);
+      return disponivel === false ? null : "tool ficou disponível com pendências em aberto (deveria exigir só confirmacao_final)";
+    },
+  },
+  {
+    nome: "criarPedidoDisponivel: false quando a etapa é 'confirmacao_final' mas não existe nenhuma confirmação pendente registrada",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pedido = {
+        ...pedidoVazio(),
+        itens: [item],
+        carrinho_confirmado: true,
+        tipo_entrega: "retirada" as const,
+        forma_pagamento: "pix" as const,
+      };
+      const disponivel = criarPedidoDisponivel(pedido, null, FLUXO_PEDIDO_CONFIG_PADRAO);
+      return disponivel === false ? null : "tool ficou disponível sem nenhum resumo ter sido mostrado/confirmado (consultar_carrinho nunca rodou)";
+    },
+  },
+  {
+    nome: "criarPedidoDisponivel: false quando o hash da confirmação pendente não bate com o pedido atual (carrinho mudou desde o resumo)",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pedido = {
+        ...pedidoVazio(),
+        itens: [item],
+        carrinho_confirmado: true,
+        tipo_entrega: "retirada" as const,
+        forma_pagamento: "pix" as const,
+      };
+      const confirmacaoDeOutroPedido: AguardandoConfirmacao = {
+        hash: "hash-de-outro-carrinho",
+        expiraEm: new Date(Date.now() + 60_000).toISOString(),
+        resumoTexto: "irrelevante",
+      };
+      const disponivel = criarPedidoDisponivel(pedido, confirmacaoDeOutroPedido, FLUXO_PEDIDO_CONFIG_PADRAO);
+      return disponivel === false ? null : "tool ficou disponível com hash de confirmação que não bate com o carrinho atual";
+    },
+  },
+  {
+    nome: "criarPedidoDisponivel: false quando a confirmação pendente já expirou",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pedido = {
+        ...pedidoVazio(),
+        itens: [item],
+        carrinho_confirmado: true,
+        tipo_entrega: "retirada" as const,
+        forma_pagamento: "pix" as const,
+      };
+      const confirmacaoExpirada: AguardandoConfirmacao = {
+        hash: calcularHashConfirmacao(pedido),
+        expiraEm: new Date(Date.now() - 1_000).toISOString(),
+        resumoTexto: "irrelevante",
+      };
+      const disponivel = criarPedidoDisponivel(pedido, confirmacaoExpirada, FLUXO_PEDIDO_CONFIG_PADRAO);
+      return disponivel === false ? null : "tool ficou disponível com uma confirmação já expirada";
+    },
+  },
+  {
+    nome: "criarPedidoDisponivel: true quando a etapa é exatamente confirmacao_final e existe confirmação pendente válida (episódio real: 'Sim' após o resumo)",
+    rodar: () => {
+      const item: ItemCarrinho = { produto_id: "p1", linha_id: "l1", nome_produto: "X", preco_unitario: 10, quantidade: 1, observacoes: null, opcoes: [] };
+      const pedido = {
+        ...pedidoVazio(),
+        itens: [item],
+        carrinho_confirmado: true,
+        tipo_entrega: "retirada" as const,
+        forma_pagamento: "pix" as const,
+      };
+      const confirmacaoValida: AguardandoConfirmacao = {
+        hash: calcularHashConfirmacao(pedido),
+        expiraEm: new Date(Date.now() + 60_000).toISOString(),
+        resumoTexto: "irrelevante",
+      };
+      const disponivel = criarPedidoDisponivel(pedido, confirmacaoValida, FLUXO_PEDIDO_CONFIG_PADRAO);
+      return disponivel === true ? null : "tool deveria estar disponível — resumo mostrado, carrinho intacto, confirmação ainda válida";
+    },
+  },
+
+  // ============================================================================
+  // Gate determinístico da etapa de confirmação final (confirmaResumoPendente,
+  // deteccao.ts) — a mesma causa raiz do episódio real: "Sim" precisa ser
+  // reconhecido sem depender do LLM decidir chamar a tool.
+  // ============================================================================
+
+  {
+    nome: "confirmaResumoPendente: reconhece confirmações curtas isoladas ('Sim', 'confirmo', 'pode confirmar', 'fechar assim')",
+    rodar: () => {
+      const positivos = ["Sim", "sim", "Confirmo", "pode confirmar", "fechar assim", "isso mesmo", "pode", "ok", "beleza"];
+      const falhou = positivos.filter((texto) => !confirmaResumoPendente(texto));
+      return falhou.length === 0 ? null : `não reconheceu como confirmação: ${JSON.stringify(falhou)}`;
+    },
+  },
+  {
+    nome: "confirmaResumoPendente: NUNCA casa uma confirmação embutida numa mensagem composta (evita disparar criar_pedido por engano)",
+    rodar: () => {
+      const negativos = [
+        "sim, mas quero trocar o pagamento",
+        "acho que sim, deixa eu ver o cardápio de novo",
+        "quero mais um x-bacon",
+        "não, pera",
+      ];
+      const falhou = negativos.filter((texto) => confirmaResumoPendente(texto));
+      return falhou.length === 0 ? null : `reconheceu como confirmação uma mensagem composta/ambígua: ${JSON.stringify(falhou)}`;
+    },
+  },
+
+  // ============================================================================
+  // Veto de fonte pra afirmação de confirmação de pedido (tarefa desta sessão)
+  // — fecha a lacuna de `confianca.ts` só cobrir TIPOS_COMERCIAIS: uma
+  // afirmação "generico" tipo "o cliente confirmou o pedido" sem
+  // "criar_pedido" bem-sucedido por trás nunca pode chegar ao Atendente.
+  // ============================================================================
+
+  {
+    nome: "filtrarAfirmacoesDeConfirmacaoSemFonte: descarta afirmação de confirmação SEM fonte real de criar_pedido",
+    rodar: () => {
+      const relatorio: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [{ texto: "O pedido do cliente foi confirmado.", tipo: "generico", fonte_tool: null, fonte_tool_execucao_id: null }],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const resultado = filtrarAfirmacoesDeConfirmacaoSemFonte(relatorio, []);
+      return resultado.afirmacoes.length === 0 ? null : `esperado afirmação descartada, sobrou ${JSON.stringify(resultado.afirmacoes)}`;
+    },
+  },
+  {
+    nome: "filtrarAfirmacoesDeConfirmacaoSemFonte: mantém afirmação de confirmação COM fonte real de criar_pedido bem-sucedido",
+    rodar: () => {
+      const relatorio: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [
+          { texto: "O pedido foi confirmado e criado com sucesso.", tipo: "generico", fonte_tool: "criar_pedido", fonte_tool_execucao_id: "eval-cp-1" },
+        ],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      const evidencias: EvidenciaColetada[] = [
+        { execucaoId: "eval-cp-1", toolNome: "criar_pedido", output: { pedido_criado: true, total: 32.9 } },
+      ];
+      const resultado = filtrarAfirmacoesDeConfirmacaoSemFonte(relatorio, evidencias);
+      return resultado.afirmacoes.length === 1 ? null : "descartou uma afirmação de confirmação com fonte real (falso positivo)";
+    },
+  },
+  {
+    nome: "filtrarAfirmacoesDeConfirmacaoSemFonte: não mexe em afirmações que não falam de confirmação de pedido",
+    rodar: () => {
+      const relatorio: RelatorioInvestigacao = {
+        sem_investigacao: false,
+        afirmacoes: [{ texto: "Não há pizza de calabresa no cardápio.", tipo: "disponibilidade", fonte_tool: "buscar_produtos", fonte_tool_execucao_id: "eval-real-1" }],
+        ambiguidade: { tipo: "nenhuma" },
+        ferramentasChamadas: 1,
+      };
+      return filtrarAfirmacoesDeConfirmacaoSemFonte(relatorio, []) === relatorio
+        ? null
+        : "mexeu num relatório sem nenhuma afirmação de confirmação de pedido";
     },
   },
 ];

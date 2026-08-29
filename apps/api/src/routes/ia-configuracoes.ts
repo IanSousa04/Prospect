@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { AtualizarIaConfiguracaoSchema } from "@prospect/shared";
+import { AtualizarIaConfiguracaoSchema, FLUXO_PEDIDO_CONFIG_PADRAO } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth } from "../lib/auth.js";
 
@@ -19,7 +19,7 @@ export async function iaConfiguracoesRoutes(app: FastifyInstance): Promise<void>
 
     const { data, error } = await supabaseAdmin
       .from("ia_configuracoes")
-      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, prazo_entrega_modo, prazo_entrega_texto")
+      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, prazo_entrega_modo, prazo_entrega_texto, fluxo_pedido_json")
       .eq("empresa_id", empresaId)
       .maybeSingle();
 
@@ -28,16 +28,20 @@ export async function iaConfiguracoesRoutes(app: FastifyInstance): Promise<void>
       return reply.code(500).send({ error: "erro_ao_buscar_configuracao" });
     }
 
-    return (
-      data ?? {
+    if (!data) {
+      return {
         tom_de_voz: "amigavel",
         usa_emoji: true,
         nome_assistente: null,
         comportamento_json: {},
         prazo_entrega_modo: "padrao",
         prazo_entrega_texto: null,
-      }
-    );
+        fluxo_pedido: FLUXO_PEDIDO_CONFIG_PADRAO,
+      };
+    }
+
+    const { fluxo_pedido_json, ...resto } = data;
+    return { ...resto, fluxo_pedido: fluxo_pedido_json ?? FLUXO_PEDIDO_CONFIG_PADRAO };
   });
 
   app.put("/ia-configuracoes", async (request, reply) => {
@@ -59,16 +63,18 @@ export async function iaConfiguracoesRoutes(app: FastifyInstance): Promise<void>
           comportamento_json: body.comportamento_json,
           prazo_entrega_modo: body.prazo_entrega_modo,
           prazo_entrega_texto: body.prazo_entrega_texto?.trim() || null,
+          fluxo_pedido_json: body.fluxo_pedido,
         },
         { onConflict: "empresa_id" },
       )
-      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, prazo_entrega_modo, prazo_entrega_texto")
+      .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, prazo_entrega_modo, prazo_entrega_texto, fluxo_pedido_json")
       .single();
 
     if (error) {
       request.log.error(error);
       return reply.code(500).send({ error: "erro_ao_salvar_configuracao" });
     }
-    return data;
+    const { fluxo_pedido_json, ...resto } = data;
+    return { ...resto, fluxo_pedido: fluxo_pedido_json ?? FLUXO_PEDIDO_CONFIG_PADRAO };
   });
 }

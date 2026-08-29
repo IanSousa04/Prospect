@@ -5,6 +5,7 @@ import type {
   ClienteComMetricas,
   ComportamentoJson,
   EnderecoEntrega,
+  FluxoPedidoConfig,
   FormaPagamento,
   GrupoOpcoesComOpcoes,
   Handoff,
@@ -329,6 +330,7 @@ export interface IaConfiguracaoResposta {
   comportamento_json: ComportamentoJson;
   prazo_entrega_modo: PrazoEntregaModo;
   prazo_entrega_texto: string | null;
+  fluxo_pedido: FluxoPedidoConfig;
 }
 
 export interface CriarPedidoBody {

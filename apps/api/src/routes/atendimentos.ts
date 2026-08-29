@@ -3,13 +3,21 @@ import type {
   AguardandoConfirmacao,
   AtendimentoComContexto,
   EnderecoEntrega,
+  FluxoPedidoConfig,
   FormaPagamento,
   ItemCarrinho,
   OrderContext,
   StatusAtendimento,
   TipoEntrega,
 } from "@prospect/shared";
-import { aplicarMutacaoCarrinho, encontrarLinhaEquivalente, pedidoVazio, resumoPedidoIa } from "@prospect/shared";
+import {
+  aplicarMutacaoCarrinho,
+  encontrarLinhaEquivalente,
+  pedidoVazio,
+  resumoPedidoIa,
+  FluxoPedidoConfigSchema,
+  FLUXO_PEDIDO_CONFIG_PADRAO,
+} from "@prospect/shared";
 import { montarItensComSnapshot } from "@prospect/pedidos-core";
 import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "../lib/supabase.js";
@@ -71,6 +79,22 @@ async function carregarConfirmacaoPendenteIa(
     .maybeSingle();
 
   return (data?.estado_json as { aguardando_confirmacao?: AguardandoConfirmacao } | null)?.aguardando_confirmacao ?? null;
+}
+
+/** Motor de etapas configurável (tasks/0056/0077/0078) — o painel humano
+ * precisa refletir exatamente as mesmas etapas/opções que a IA usa
+ * (CLAUDE.md regra 8: mesmo estado, nunca um cálculo paralelo), então
+ * `informacoesPendentes`/`aplicarMutacaoCarrinho` aqui usam a mesma config
+ * real da empresa, nunca o default silencioso. */
+async function carregarFluxoPedidoConfig(empresaId: string): Promise<FluxoPedidoConfig> {
+  const { data } = await supabaseAdmin
+    .from("ia_configuracoes")
+    .select("fluxo_pedido_json")
+    .eq("empresa_id", empresaId)
+    .maybeSingle();
+
+  const parseado = FluxoPedidoConfigSchema.safeParse(data?.fluxo_pedido_json ?? {});
+  return parseado.success ? parseado.data : FLUXO_PEDIDO_CONFIG_PADRAO;
 }
 
 async function salvarPedidoIa(empresaId: string, atendimentoId: string, pedido: OrderContext): Promise<void> {
@@ -175,9 +199,12 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
     const { empresaId } = request.auth!;
     const { id } = request.params;
 
-    const pedido = await carregarPedidoIa(empresaId, id);
-    const aguardandoConfirmacao = await carregarConfirmacaoPendenteIa(empresaId, id);
-    return resumoPedidoIa(pedido, aguardandoConfirmacao);
+    const [pedido, aguardandoConfirmacao, fluxoPedido] = await Promise.all([
+      carregarPedidoIa(empresaId, id),
+      carregarConfirmacaoPendenteIa(empresaId, id),
+      carregarFluxoPedidoConfig(empresaId),
+    ]);
+    return resumoPedidoIa(pedido, aguardandoConfirmacao, fluxoPedido);
   });
 
   // Adicionar item ao carrinho — mesma validação de preço/disponibilidade
@@ -198,7 +225,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "produto_e_quantidade_obrigatorios" });
     }
 
-    const pedido = await carregarPedidoIa(empresaId, id);
+    const [pedido, fluxoPedido] = await Promise.all([carregarPedidoIa(empresaId, id), carregarFluxoPedidoConfig(empresaId)]);
     const linhaExistente = encontrarLinhaEquivalente(
       pedido.itens,
       produto_id,
@@ -219,9 +246,9 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       ? pedido.itens.map((item) => (item.linha_id === linhaExistente.linha_id ? itemAtualizado : item))
       : [...pedido.itens, itemAtualizado];
 
-    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
     await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, fluxoPedido);
   });
 
   // Atualizar quantidade/observação de uma linha já existente — revalida
@@ -233,7 +260,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
     const { empresaId } = request.auth!;
     const { id, linhaId } = request.params;
 
-    const pedido = await carregarPedidoIa(empresaId, id);
+    const [pedido, fluxoPedido] = await Promise.all([carregarPedidoIa(empresaId, id), carregarFluxoPedidoConfig(empresaId)]);
     const itemAtual = pedido.itens.find((item) => item.linha_id === linhaId);
     if (!itemAtual) return reply.code(404).send({ error: "linha_nao_encontrada" });
 
@@ -253,9 +280,9 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
 
     const itemAtualizado: ItemCarrinho = { ...montagem.itens[0]!, linha_id: linhaId };
     const novosItens = pedido.itens.map((item) => (item.linha_id === linhaId ? itemAtualizado : item));
-    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
     await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, fluxoPedido);
   });
 
   // Remover uma linha do carrinho.
@@ -265,15 +292,15 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       const { empresaId } = request.auth!;
       const { id, linhaId } = request.params;
 
-      const pedido = await carregarPedidoIa(empresaId, id);
+      const [pedido, fluxoPedido] = await Promise.all([carregarPedidoIa(empresaId, id), carregarFluxoPedidoConfig(empresaId)]);
       if (!pedido.itens.some((item) => item.linha_id === linhaId)) {
         return reply.code(404).send({ error: "linha_nao_encontrada" });
       }
 
       const novosItens = pedido.itens.filter((item) => item.linha_id !== linhaId);
-      const atualizado = aplicarMutacaoCarrinho(pedido, novosItens);
+      const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
       await salvarPedidoIa(empresaId, id, atualizado);
-      return resumoPedidoIa(atualizado);
+      return resumoPedidoIa(atualizado, null, fluxoPedido);
     },
   );
 
@@ -291,6 +318,11 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "tipo_entrega_invalido" });
     }
 
+    const fluxoPedido = await carregarFluxoPedidoConfig(empresaId);
+    if (tipo_entrega && !fluxoPedido.tipos_entrega_oferecidos.includes(tipo_entrega)) {
+      return reply.code(400).send({ error: "tipo_entrega_nao_oferecido", tipos_oferecidos: fluxoPedido.tipos_entrega_oferecidos });
+    }
+
     const pedido = await carregarPedidoIa(empresaId, id);
     // Mudar entrega/endereço também é uma mutação real do pedido — mesma
     // regra 6 do CLAUDE.md de nunca herdar confirmação de um estado que já
@@ -302,7 +334,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       carrinho_confirmado: false,
     };
     await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado);
+    return resumoPedidoIa(atualizado, null, fluxoPedido);
   });
 
   // Definir forma de pagamento.
@@ -318,10 +350,15 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "forma_pagamento_invalida" });
       }
 
+      const fluxoPedido = await carregarFluxoPedidoConfig(empresaId);
+      if (forma_pagamento && !fluxoPedido.formas_pagamento_aceitas.includes(forma_pagamento)) {
+        return reply.code(400).send({ error: "forma_pagamento_nao_aceita", formas_aceitas: fluxoPedido.formas_pagamento_aceitas });
+      }
+
       const pedido = await carregarPedidoIa(empresaId, id);
       const atualizado = { ...pedido, forma_pagamento, carrinho_confirmado: false };
       await salvarPedidoIa(empresaId, id, atualizado);
-      return resumoPedidoIa(atualizado);
+      return resumoPedidoIa(atualizado, null, fluxoPedido);
     },
   );
 

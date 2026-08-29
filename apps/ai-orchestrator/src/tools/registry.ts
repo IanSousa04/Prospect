@@ -1,4 +1,4 @@
-import { isPermitido, type ComportamentoJson, type IaPermissao, type NomeFerramenta } from "@prospect/shared";
+import { isPermitido, type ComportamentoJson, type FluxoPedidoConfig, type IaPermissao, type NomeFerramenta } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import type { ToolDefinitionForLlm } from "../llm/client.js";
 
@@ -15,6 +15,12 @@ export interface ToolContext {
    * que decidem incluir/omitir um campo proativo (ex.: produto favorito em
    * `consultar_cliente`) consultam aqui em vez de reimplementar a busca. */
   comportamento: ComportamentoJson;
+  /** `ia_configuracoes.fluxo_pedido_json` desta empresa, já parseado —
+   * motor de etapas configurável do pedido (tasks/0056/0077/0078): quais
+   * tipos de entrega a empresa oferece, se pergunta forma de pagamento e
+   * quais formas aceita. Consumido por `informacoesPendentes()`/
+   * `aplicarMutacaoCarrinho()` (pedido-ia.ts) e pelas tools de carrinho. */
+  fluxoPedido: FluxoPedidoConfig;
 }
 
 export interface ToolDefinicao<TInput = any, TOutput = any> {

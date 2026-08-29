@@ -109,7 +109,7 @@ registerTool({
   risco: "alto",
   executor: async (_input: unknown, ctx: ToolContext) => {
     const pedido = await carregarPedidoEmConstrucao(ctx);
-    const pendencias = informacoesPendentes(pedido);
+    const pendencias = informacoesPendentes(pedido, ctx.fluxoPedido);
 
     // Só a confirmação final pode faltar — carrinho, entrega e pagamento
     // já precisam estar todos resolvidos (CLAUDE.md regra 6: nunca

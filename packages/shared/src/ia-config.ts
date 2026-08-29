@@ -8,6 +8,7 @@
 // `ia_permissoes` simplesmente não está no Map.
 
 import { z } from "zod";
+import { TIPOS_ENTREGA, FORMAS_PAGAMENTO } from "./pedidos.js";
 
 /** Toda ferramenta que a IA pode chamar — ver §5.6. Nomes em snake_case,
  * sem acento (mesma convenção do resto do domínio de negócio no código).
@@ -82,6 +83,29 @@ export type TomDeVoz = (typeof TONS_DE_VOZ)[number];
 export const PRAZO_ENTREGA_MODOS = ["padrao", "calculado"] as const;
 export type PrazoEntregaModo = (typeof PRAZO_ENTREGA_MODOS)[number];
 
+/** Motor de etapas do pedido (tasks/0056/0077/0078) — cada empresa configura
+ * quais etapas fazem sentido pro próprio negócio, em vez de toda empresa ser
+ * forçada a oferecer entrega E retirada e a sempre perguntar forma de
+ * pagamento. Ausência de configuração (empresa nunca salvou nada) cai nos
+ * defaults abaixo, que reproduzem o comportamento anterior a esta tarefa —
+ * nunca muda o comportamento de uma empresa já em produção sem ação
+ * explícita dela. Consumido por `informacoesPendentes()` (pedido-ia.ts). */
+export const FluxoPedidoConfigSchema = z
+  .object({
+    tipos_entrega_oferecidos: z.array(z.enum(TIPOS_ENTREGA)).min(1),
+    perguntar_forma_pagamento: z.boolean(),
+    formas_pagamento_aceitas: z.array(z.enum(FORMAS_PAGAMENTO)).min(1),
+  })
+  .strict();
+
+export type FluxoPedidoConfig = z.infer<typeof FluxoPedidoConfigSchema>;
+
+export const FLUXO_PEDIDO_CONFIG_PADRAO: FluxoPedidoConfig = {
+  tipos_entrega_oferecidos: [...TIPOS_ENTREGA],
+  perguntar_forma_pagamento: true,
+  formas_pagamento_aceitas: [...FORMAS_PAGAMENTO],
+};
+
 /** Corpo de `PUT /ia-configuracoes` — ver apps/api/src/routes/ia-configuracoes.ts
  * e docs/ROADMAP.md §1 "Fazer valer comportamento_json". `nome_assistente`
  * vazio (string em branco) normaliza pra null na rota — nunca salva string
@@ -94,6 +118,7 @@ export const AtualizarIaConfiguracaoSchema = z
     comportamento_json: ComportamentoJsonSchema,
     prazo_entrega_modo: z.enum(PRAZO_ENTREGA_MODOS),
     prazo_entrega_texto: z.string().trim().max(120).nullable(),
+    fluxo_pedido: FluxoPedidoConfigSchema,
   })
   .strict();
 
