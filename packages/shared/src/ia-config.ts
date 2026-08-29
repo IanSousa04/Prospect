@@ -52,6 +52,9 @@ export const NOMES_FERRAMENTAS = [
   "buscar_conhecimento",
   // operação (calculado a partir da fila real, nunca inventado — ver tasks/0075)
   "consultar_prazo_entrega",
+  // configuração da própria empresa como evidência auditável (tasks/0082) —
+  // o que a loja oferece de entrega e aceita de pagamento
+  "consultar_opcoes_atendimento",
 ] as const;
 
 export type NomeFerramenta = (typeof NOMES_FERRAMENTAS)[number];

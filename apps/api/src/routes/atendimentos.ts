@@ -9,6 +9,7 @@ import type {
   OrderContext,
   StatusAtendimento,
   TipoEntrega,
+  UltimoPedidoCriado,
 } from "@prospect/shared";
 import {
   aplicarMutacaoCarrinho,
@@ -51,26 +52,17 @@ const TRANSICOES: Record<StatusAtendimento, StatusAtendimento[]> = {
  * `mesclarEstado` já tem do lado do orquestrador. Um humano editando pela
  * UI (tarefa 0063) usa exatamente estas duas funções, nunca um pedido
  * paralelo (CLAUDE.md regra 8). */
-async function carregarPedidoIa(empresaId: string, atendimentoId: string): Promise<OrderContext> {
-  const { data } = await supabaseAdmin
-    .from("ia_sessoes")
-    .select("estado_json")
-    .eq("empresa_id", empresaId)
-    .eq("atendimento_id", atendimentoId)
-    .maybeSingle();
-
-  const pedido = (data?.estado_json as { pedido?: OrderContext } | null)?.pedido;
-  return pedido ?? pedidoVazio();
+interface EstadoSessaoIa {
+  pedido: OrderContext;
+  aguardando_confirmacao: AguardandoConfirmacao | null;
+  ultimo_pedido_criado: UltimoPedidoCriado | null;
 }
 
-/** Confirmação pendente do resumo final (tarefa 0022, `AguardandoConfirmacao`
- * — ver packages/shared/src/pedido-ia.ts) — só leitura pra exibição no
- * painel humano (CLAUDE.md regra 8); a API nunca cria/edita essa
- * confirmação, só a IA (via consultar_carrinho/criar_pedido). */
-async function carregarConfirmacaoPendenteIa(
-  empresaId: string,
-  atendimentoId: string,
-): Promise<AguardandoConfirmacao | null> {
+/** Lê de uma vez tudo que o painel precisa de `ia_sessoes.estado_json` —
+ * carrinho, confirmação pendente e ponteiro do pedido já criado. Uma query
+ * só: os três campos vivem na mesma linha e sempre são lidos juntos (a
+ * etapa do checkout, `estado_checkout`, é derivada dos três). */
+async function carregarEstadoIa(empresaId: string, atendimentoId: string): Promise<EstadoSessaoIa> {
   const { data } = await supabaseAdmin
     .from("ia_sessoes")
     .select("estado_json")
@@ -78,7 +70,21 @@ async function carregarConfirmacaoPendenteIa(
     .eq("atendimento_id", atendimentoId)
     .maybeSingle();
 
-  return (data?.estado_json as { aguardando_confirmacao?: AguardandoConfirmacao } | null)?.aguardando_confirmacao ?? null;
+  const estado = (data?.estado_json as {
+    pedido?: OrderContext;
+    aguardando_confirmacao?: AguardandoConfirmacao;
+    ultimo_pedido_criado?: UltimoPedidoCriado;
+  } | null) ?? {};
+
+  return {
+    pedido: estado.pedido ?? pedidoVazio(),
+    aguardando_confirmacao: estado.aguardando_confirmacao ?? null,
+    ultimo_pedido_criado: estado.ultimo_pedido_criado ?? null,
+  };
+}
+
+async function carregarPedidoIa(empresaId: string, atendimentoId: string): Promise<OrderContext> {
+  return (await carregarEstadoIa(empresaId, atendimentoId)).pedido;
 }
 
 /** Motor de etapas configurável (tasks/0056/0077/0078) — o painel humano
@@ -199,12 +205,11 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
     const { empresaId } = request.auth!;
     const { id } = request.params;
 
-    const [pedido, aguardandoConfirmacao, fluxoPedido] = await Promise.all([
-      carregarPedidoIa(empresaId, id),
-      carregarConfirmacaoPendenteIa(empresaId, id),
+    const [estado, fluxoPedido] = await Promise.all([
+      carregarEstadoIa(empresaId, id),
       carregarFluxoPedidoConfig(empresaId),
     ]);
-    return resumoPedidoIa(pedido, aguardandoConfirmacao, fluxoPedido);
+    return resumoPedidoIa(estado.pedido, estado.aguardando_confirmacao, fluxoPedido, estado.ultimo_pedido_criado);
   });
 
   // Adicionar item ao carrinho — mesma validação de preço/disponibilidade
@@ -248,7 +253,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
 
     const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
     await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado, null, fluxoPedido);
+    return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
   });
 
   // Atualizar quantidade/observação de uma linha já existente — revalida
@@ -282,7 +287,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
     const novosItens = pedido.itens.map((item) => (item.linha_id === linhaId ? itemAtualizado : item));
     const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
     await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado, null, fluxoPedido);
+    return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
   });
 
   // Remover uma linha do carrinho.
@@ -300,7 +305,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       const novosItens = pedido.itens.filter((item) => item.linha_id !== linhaId);
       const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
       await salvarPedidoIa(empresaId, id, atualizado);
-      return resumoPedidoIa(atualizado, null, fluxoPedido);
+      return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
     },
   );
 
@@ -334,7 +339,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       carrinho_confirmado: false,
     };
     await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado, null, fluxoPedido);
+    return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
   });
 
   // Definir forma de pagamento.
@@ -358,7 +363,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       const pedido = await carregarPedidoIa(empresaId, id);
       const atualizado = { ...pedido, forma_pagamento, carrinho_confirmado: false };
       await salvarPedidoIa(empresaId, id, atualizado);
-      return resumoPedidoIa(atualizado, null, fluxoPedido);
+      return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
     },
   );
 

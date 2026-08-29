@@ -103,6 +103,8 @@ Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** um
 - [x] **[P1] Confirmação explícita do pedido + criação real em `pedidos`/`itens_pedido`.** `SP: 3` ([detalhes](tasks/0055-confirmacao_criacao_pedido.md))
 - [x] **[P1] Bug: endereço não atualiza na UI quando o cliente informa/corrige pelo WhatsApp.** `SP: 2` ([detalhes](tasks/0076-endereco_nao_atualiza_ui.md))
 - [x] **[P1] Bug: IA não finalizava pedido simples (cliente confirmando só com "Sim" virava handoff mudo) + motor de etapas configurável (escopo mínimo) + opções de entrega/formas de pagamento configuráveis por empresa.** `SP: 8` ([detalhes](tasks/0080-gate_confirmacao_pedido_e_motor_etapas.md))
+- [x] **[P0] Workflow transacional determinístico — a LLM perde autoridade sobre estado, ferramentas e confirmação (corrige o bug estrutural que travava o checkout inteiro).** `SP: 13` ([detalhes](tasks/0081-workflow_deterministico_checkout.md))
+- [x] **[P0] Pipeline "nada sai sem lastro" — montagem determinística do carrinho, roteamento obrigatório de perguntas e gate de lastro por afirmação.** `SP: 13` ([detalhes](tasks/0082-pipeline_lastro.md))
 - [x] **[P2] Motor genérico de etapas configurável por empresa (escopo mínimo entregue via 0080 — framework de módulos genérico continua stretch futuro).** `SP: 5` ([detalhes](tasks/0056-motor_generico_etapas.md))
 - [x] **[P2] Opções de entrega (retirada/entrega) configuráveis por empresa.** `SP: 3` ([detalhes](tasks/0077-opcoes_entrega_configuraveis.md))
 - [x] **[P2] Formas de pagamento configuráveis por empresa + deixar claro pra IA que o pagamento é feito ao entregador, nunca pela plataforma.** `SP: 5` ([detalhes](tasks/0078-formas_pagamento_configuraveis.md))

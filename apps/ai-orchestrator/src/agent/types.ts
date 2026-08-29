@@ -39,11 +39,15 @@ export interface Afirmacao {
 export type TipoAmbiguidade = "nenhuma" | "multiplos_candidatos" | "informacao_insuficiente";
 
 export interface RelatorioInvestigacao {
-  /** true quando a pergunta não exige nenhum dado real (saudação,
-   * agradecimento, despedida, etc.) — nesse caso confiança/risco não se
-   * aplicam e a resposta sai direto. Espelha o `coverage/confidence = null`
-   * do Eddy (`NO_INVESTIGATION_MARKERS` em apps/query-api/src/agent.ts). */
-  sem_investigacao: boolean;
+  // `sem_investigacao` foi REMOVIDO na tarefa 0082. Era um campo que o
+  // próprio LLM preenchia e que, quando marcado, fazia early-return em todas
+  // as redes de segurança e devolvia confiança "alta" com zero afirmações —
+  // ou seja, o modelo podia desligar a pipeline inteira sozinho. Episódio
+  // real: um "Sim" respondendo a uma pergunta do sistema foi classificado
+  // como conversa social e a resposta saiu sem fato nenhum. Quem decide se a
+  // mensagem é social agora é o interpretador, em código
+  // (`ehSocial`, agent/interpretacao/mensagem.ts), e nesse caso a
+  // investigação sequer é chamada.
   afirmacoes: Afirmacao[];
   ambiguidade: { tipo: TipoAmbiguidade; opcoes?: string[] };
   /** Quantas ferramentas foram de fato chamadas durante a investigação —

@@ -12,6 +12,8 @@ export type {
   InformacaoPendente,
   ResumoPedidoIa,
   AguardandoConfirmacao,
+  UltimoPedidoCriado,
+  EstadoCheckout,
 } from "@prospect/shared";
 export {
   pedidoVazio,
@@ -22,4 +24,8 @@ export {
   resumoPedidoIa,
   calcularHashConfirmacao,
   construirResumoTexto,
+  confirmacaoPendenteValida,
+  derivarEstadoCheckout,
+  checkoutEhTransacional,
+  pedidoCriadoRecentemente,
 } from "@prospect/shared";

@@ -45,15 +45,25 @@ export interface ItemCarrinho extends ItemMontado {
 export interface OrderContext {
   status: StatusPedidoIa;
   itens: ItemCarrinho[];
-  /** true só depois que o cliente confirmou explicitamente o carrinho
-   * (resumo apresentado, "isso mesmo" / "pode confirmar") — nunca setado
-   * automaticamente por ter itens. */
+  /** Registro persistido de que o WORKFLOW validou uma confirmação real do
+   * cliente para ESTE carrinho (tarefa 0081) — gravado só por
+   * `agent/checkout/transicoes.ts`, nunca pelo LLM e nunca automaticamente
+   * por ter itens. Deixou de ser uma etapa própria de `informacoesPendentes`
+   * (a etapa `confirmar_carrinho` existia mas nenhum código jamais a
+   * concluía, travando todo o checkout): hoje o resumo final é a única
+   * confirmação, e este campo é o que `criar_pedido` exige como prova de que
+   * ela aconteceu. Qualquer mutação de carrinho o zera
+   * (`aplicarMutacaoCarrinho`) — confirmação nunca é herdada por um carrinho
+   * que mudou. */
   carrinho_confirmado: boolean;
   tipo_entrega: TipoEntrega | null;
   endereco: EnderecoEntrega | null;
   forma_pagamento: FormaPagamento | null;
-  /** true só depois da confirmação final explícita (CLAUDE.md regra 6) —
-   * é o que a tarefa 0055 usa como gatilho pra criar o pedido de verdade. */
+  /** true depois que o pedido real foi criado a partir deste carrinho
+   * (CLAUDE.md regra 6). Na prática o carrinho é resetado logo em seguida,
+   * então a evidência que sobrevive ao turno é `UltimoPedidoCriado` — este
+   * campo existe pro caso de um carrinho ser inspecionado entre a criação e
+   * o reset. */
   confirmado: boolean;
 }
 
@@ -82,11 +92,9 @@ export function calcularSubtotal(itens: ItemCarrinho[]): number {
  * ("quero 2 pizzas, no Pix, entrega na minha casa") e o orquestrador deve
  * extrair tudo isso num turno só, sem perguntar de novo o que já foi dito.
  * Ordem do array é só uma sugestão de prioridade pra quem for gerar a
- * pergunta (produtos > confirmar carrinho > entrega > endereço > pagamento
- * > confirmação final), nunca uma obrigação de perguntar um de cada vez. */
+ * pergunta (produtos > entrega > endereço > pagamento > confirmação final), nunca uma obrigação de perguntar um de cada vez. */
 export type InformacaoPendente =
   | "produtos"
-  | "confirmar_carrinho"
   | "tipo_entrega"
   | "endereco"
   | "forma_pagamento"
@@ -162,7 +170,6 @@ export function informacoesPendentes(
   if (pedido.itens.length === 0) return ["produtos"];
 
   const pendentes: InformacaoPendente[] = [];
-  if (!pedido.carrinho_confirmado) pendentes.push("confirmar_carrinho");
   if (tipoEntregaPendente(pedido, config)) pendentes.push("tipo_entrega");
   if (pedido.tipo_entrega === "entrega" && !pedido.endereco) pendentes.push("endereco");
   if (config.perguntar_forma_pagamento && !pedido.forma_pagamento) pendentes.push("forma_pagamento");
@@ -243,6 +250,111 @@ export function construirResumoTexto(pedido: OrderContext): string {
   return `${linhas}. Subtotal: R$ ${calcularSubtotal(pedido.itens).toFixed(2).replace(".", ",")}.`;
 }
 
+/** Ponteiro para o pedido REAL criado a partir deste carrinho (tarefa
+ * 0081), guardado em `ia_sessoes.estado_json.ultimo_pedido_criado`. Existe
+ * por dois motivos, ambos determinísticos:
+ *
+ * 1. **Evidência que sobrevive ao reset.** `criar_pedido` zera o Order
+ *    Context logo depois de criar, então sem isto o estado do checkout
+ *    voltaria instantaneamente pra "sem carrinho" e o turno seguinte não
+ *    teria como saber que um pedido acabou de nascer nesta conversa.
+ * 2. **Chave de idempotência.** Uma segunda confirmação do MESMO carrinho
+ *    (cliente manda "tudo certo" três vezes na mesma rajada, ou o poller
+ *    reprocessa) nunca pode virar um segundo pedido real — `hash` é o
+ *    `calcularHashConfirmacao` do carrinho no momento da criação.
+ *
+ * Não é estado editável por humano: é o registro de um fato já acontecido.
+ * O pedido em si continua sendo gerenciado no painel "Pedido" do
+ * atendimento (CLAUDE.md regra 8). */
+export interface UltimoPedidoCriado {
+  pedido_id: string;
+  hash: string;
+  /** ISO timestamp da criação real. */
+  criado_em: string;
+}
+
+/** Janela em que uma nova confirmação ainda é tratada como repetição da
+ * anterior (idempotência) em vez de um pedido novo. Generosa de propósito:
+ * o custo de recusar uma duplicata é uma mensagem a mais; o custo de criar
+ * dois pedidos reais é dinheiro e comida de verdade (CLAUDE.md regra 6). */
+export const MINUTOS_JANELA_PEDIDO_CRIADO = 30;
+
+export function pedidoCriadoRecentemente(
+  ultimo: UltimoPedidoCriado | null | undefined,
+  agora: Date = new Date(),
+): boolean {
+  if (!ultimo) return false;
+  return agora.getTime() - new Date(ultimo.criado_em).getTime() < MINUTOS_JANELA_PEDIDO_CRIADO * 60_000;
+}
+
+/** Uma confirmação pendente só vale se o resumo mostrado ainda descreve o
+ * carrinho ATUAL (hash recalculado agora, nunca o hash salvo sozinho) e não
+ * expirou. Fonte única desta regra — antes da tarefa 0081 existia duplicada
+ * no gate de exposição do investigador e dentro de `criar_pedido`
+ * (tools/pedido.ts), com risco real de as duas divergirem. */
+export function confirmacaoPendenteValida(
+  pedido: OrderContext,
+  aguardando: AguardandoConfirmacao | null | undefined,
+  agora: Date = new Date(),
+): boolean {
+  if (!aguardando) return false;
+  if (aguardando.hash !== calcularHashConfirmacao(pedido)) return false;
+  return new Date(aguardando.expiraEm).getTime() > agora.getTime();
+}
+
+/** Etapa do checkout, DERIVADA do estado persistido — nunca um campo
+ * gravado à parte (tarefa 0081). Derivar em vez de armazenar é o que
+ * garante que a IA, a API e a UI enxerguem sempre a mesma etapa, sem
+ * chance de um estado paralelo desincronizar (CLAUDE.md regra 8), e que
+ * uma edição humana do carrinho recalcule a etapa sozinha.
+ *
+ * `confirmacao_recebida` e `handoff_realizado` da especificação NÃO estão
+ * aqui de propósito: são resultados de transição dentro de um único turno
+ * (ver `ResultadoTransicao` em agent/checkout/transicoes.ts), não estados
+ * que sobrevivem entre mensagens. */
+export type EstadoCheckout =
+  | "sem_carrinho"
+  | "montando_carrinho"
+  | "dados_completos"
+  | "aguardando_confirmacao"
+  | "pedido_criado";
+
+/** Estados em que a mensagem do cliente pode alterar o pedido — qualquer um
+ * deles obriga a mensagem a passar pelo workflow transacional determinístico
+ * ANTES de poder ser tratada como conversa social (tarefa 0081, item 5 da
+ * especificação: `sem_investigacao` não pode mais burlar o checkout). */
+const ESTADOS_TRANSACIONAIS: ReadonlySet<EstadoCheckout> = new Set<EstadoCheckout>([
+  "montando_carrinho",
+  "dados_completos",
+  "aguardando_confirmacao",
+  "pedido_criado",
+]);
+
+export function checkoutEhTransacional(estado: EstadoCheckout): boolean {
+  return ESTADOS_TRANSACIONAIS.has(estado);
+}
+
+export function derivarEstadoCheckout(
+  pedido: OrderContext,
+  aguardandoConfirmacao: AguardandoConfirmacao | null | undefined,
+  ultimoPedidoCriado: UltimoPedidoCriado | null | undefined,
+  config: FluxoPedidoConfig = FLUXO_PEDIDO_CONFIG_PADRAO,
+  agora: Date = new Date(),
+): EstadoCheckout {
+  // Carrinho vazio logo depois de uma criação real desta conversa continua
+  // sendo "pedido criado" — é o que impede uma segunda confirmação de ser
+  // interpretada como um pedido novo (e o que dá ao Atendente o fato certo
+  // pra responder "seu pedido já está confirmado" com evidência).
+  if (pedido.itens.length === 0) {
+    return pedidoCriadoRecentemente(ultimoPedidoCriado, agora) ? "pedido_criado" : "sem_carrinho";
+  }
+
+  const pendencias = informacoesPendentes(pedido, config);
+  if (pendencias.some((p) => p !== "confirmacao_final")) return "montando_carrinho";
+  if (confirmacaoPendenteValida(pedido, aguardandoConfirmacao, agora)) return "aguardando_confirmacao";
+  return "dados_completos";
+}
+
 /** OrderContext + campos derivados (subtotal, pendências, confirmação
  * pendente) — o Order Context inteiro, não só os itens, porque a tarefa
  * 0063 deixou a UI editar tipo_entrega/endereco/forma_pagamento também: sem
@@ -254,6 +366,13 @@ export interface ResumoPedidoIa extends OrderContext {
   /** null quando não há resumo pendente de confirmação agora — ver
    * `AguardandoConfirmacao` (tarefa 0022). */
   aguardando_confirmacao: AguardandoConfirmacao | null;
+  /** Etapa derivada do checkout (tarefa 0081) — a mesma que o workflow da
+   * IA usa pra decidir o que pode acontecer, exposta aqui pra UI humana
+   * enxergar exatamente o mesmo estado (CLAUDE.md regra 8). */
+  estado_checkout: EstadoCheckout;
+  /** Ponteiro pro pedido real já criado a partir deste carrinho, quando
+   * houver — evidência, não estado editável. */
+  ultimo_pedido_criado: UltimoPedidoCriado | null;
 }
 
 /** Resumo do Order Context — mesmo shape devolvido pelas tools de carrinho
@@ -268,11 +387,14 @@ export function resumoPedidoIa(
   pedido: OrderContext,
   aguardandoConfirmacao: AguardandoConfirmacao | null = null,
   config: FluxoPedidoConfig = FLUXO_PEDIDO_CONFIG_PADRAO,
+  ultimoPedidoCriado: UltimoPedidoCriado | null = null,
 ): ResumoPedidoIa {
   return {
     ...pedido,
     subtotal: calcularSubtotal(pedido.itens),
     pendencias: informacoesPendentes(pedido, config),
     aguardando_confirmacao: aguardandoConfirmacao,
+    estado_checkout: derivarEstadoCheckout(pedido, aguardandoConfirmacao, ultimoPedidoCriado, config),
+    ultimo_pedido_criado: ultimoPedidoCriado ?? null,
   };
 }

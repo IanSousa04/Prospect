@@ -28,6 +28,18 @@ export interface ToolDefinicao<TInput = any, TOutput = any> {
   descricao: string;
   parametrosJsonSchema: ToolDefinitionForLlm["parametros"];
   risco: "baixo" | "medio" | "alto";
+  /** Ferramenta que só o WORKFLOW determinístico pode chamar — nunca é
+   * oferecida ao LLM (tarefa 0081). Vale pras mutações que preenchem um
+   * "slot" do checkout a partir do que o cliente disse (tipo de entrega,
+   * endereço, forma de pagamento) e pra `criar_pedido`: quem decide que
+   * elas precisam rodar é `agent/checkout/transicoes.ts`, a partir da
+   * intenção extraída, não o julgamento do modelo a cada turno.
+   *
+   * Continua registrada, permissionada (`isPermitido`) e auditada
+   * (`ia_execucoes`) exatamente como qualquer outra — o que muda é só quem
+   * pode ser o chamador. Substitui o filtro hardcoded que `investigar()`
+   * fazia só pra "criar_pedido". */
+  somenteWorkflow?: boolean;
   /** Nunca chamar diretamente — sempre via executeTool(), que garante a
    * checagem de permissão e o log de auditoria. */
   executor: (input: TInput, ctx: ToolContext) => Promise<TOutput>;
@@ -61,12 +73,17 @@ export function getToolsForEmpresa(permissoes: Map<NomeFerramenta, IaPermissao>)
   return Array.from(registro.values()).filter((tool) => isPermitido(permissoes, tool.nome));
 }
 
+/** Ferramentas oferecidas ao Investigador (LLM). Além da permissão da
+ * empresa, exclui as `somenteWorkflow` — a LLM não pode nem tentar chamar
+ * uma mutação de checkout (tarefa 0081, CLAUDE.md regra 6). */
 export function getToolDefinitionsForLlm(permissoes: Map<NomeFerramenta, IaPermissao>): ToolDefinitionForLlm[] {
-  return getToolsForEmpresa(permissoes).map((tool) => ({
-    nome: tool.nome,
-    descricao: tool.descricao,
-    parametros: tool.parametrosJsonSchema,
-  }));
+  return getToolsForEmpresa(permissoes)
+    .filter((tool) => tool.somenteWorkflow !== true)
+    .map((tool) => ({
+      nome: tool.nome,
+      descricao: tool.descricao,
+      parametros: tool.parametrosJsonSchema,
+    }));
 }
 
 /** Risco declarado de uma tool (`ToolDefinicao.risco`, existia desde sempre

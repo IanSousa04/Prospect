@@ -106,6 +106,52 @@ export const CENARIOS_PERSONAS: CenarioPersonaDef[] = [
     },
   },
   {
+    // Episódio real "Luiza" (tarefa 0081): o cliente confirma o resumo final
+    // com "Tudo certo" — uma frase que a lista fechada anterior de
+    // confirmações nem reconhecia, e que o Investigador classificava como
+    // conversa social (`sem_investigacao`), desligando toda a pipeline. O
+    // pedido nunca era criado e a rodada terminava em handoff mudo.
+    handoffEsperado: false,
+    persona: {
+      nome: "confirma_com_tudo_certo",
+      maxTurnos: 8,
+      objetivo:
+        "Pedir um lanche, responder objetivamente entrega e pagamento quando perguntado, e confirmar o resumo final dizendo 'Tudo certo'.",
+      promptSistema:
+        "Você é um cliente direto e educado. Peça um lanche do cardápio. Se a IA perguntar se é entrega ou retirada, responda 'entrega' e, se ela pedir o endereço, informe 'Rua das Flores, 100, Centro, São Paulo'. Se perguntar a forma de pagamento, responda 'cartão de crédito'. Quando a IA apresentar o RESUMO FINAL do pedido (com total e pedindo confirmação), responda EXATAMENTE 'Tudo certo' — só isso, sem repetir o pedido e sem mais nenhuma palavra.",
+    },
+  },
+  {
+    // Episódio real "Barbara" (tarefa 0081): o cliente responde entrega E
+    // pagamento numa mensagem só. Antes, a IA respondia "entendi, entrega e
+    // cartão de crédito" sem executar nenhuma das duas mutações — o estado
+    // real do pedido continuava vazio e o checkout travava.
+    handoffEsperado: false,
+    persona: {
+      nome: "responde_entrega_e_pagamento_juntos",
+      maxTurnos: 8,
+      objetivo:
+        "Fechar um pedido informando tipo de entrega e forma de pagamento numa única mensagem, em vez de responder uma pergunta por vez.",
+      promptSistema:
+        "Você é um cliente prático, que odeia responder uma pergunta de cada vez. Peça um item do cardápio. Assim que a IA perguntar qualquer coisa sobre entrega ou pagamento, responda as DUAS de uma vez numa mensagem só, em duas linhas: 'Retirada' na primeira linha e 'Dinheiro' na segunda. Depois disso, confirme o resumo final com 'Pode fechar'.",
+    },
+  },
+  {
+    // Episódio real da tarefa 0082: o cliente pede um produto que a loja não
+    // vende. A busca voltou vazia, o único fato verificado dizia "não
+    // encontrou nenhum produto", e a IA respondeu "a gente tem várias opções
+    // no cardápio" — contradizendo o próprio fato que tinha recebido.
+    handoffEsperado: false,
+    persona: {
+      nome: "pede_produto_inexistente",
+      maxTurnos: 8,
+      objetivo:
+        "Pedir um produto que a loja não vende (pizza), entender que não tem, e então escolher algo que exista de verdade no cardápio.",
+      promptSistema:
+        "Você é um cliente comum que assumiu que a loja vende pizza. Comece pedindo 'quero uma pizza'. Se a IA disser que não tem pizza, pergunte o que tem então, escolha um dos itens que ela listar e siga com o pedido normalmente (responda entrega ou retirada e a forma de pagamento quando perguntado). Se em vez disso ela perguntar qual sabor de pizza você quer, insista uma vez pedindo a lista de sabores.",
+    },
+  },
+  {
     // Controle positivo: único gatilho de handoff 100% determinístico
     // (clientePediuHumano em agent/deteccao.ts, não depende do LLM) — prova
     // que o script continua pegando regressão de "handoff que deveria

@@ -21,17 +21,14 @@ import { registerTool, type ToolContext } from "./registry.js";
 import {
   carregarPedidoEmConstrucao,
   salvarPedidoEmConstrucao,
-  salvarConfirmacaoPendente,
+  carregarConfirmacaoPendente,
+  carregarUltimoPedidoCriado,
 } from "../agent/sessao.js";
 import {
   aplicarMutacaoCarrinho,
   encontrarLinhaEquivalente,
   resumoPedidoIa,
-  informacoesPendentes,
-  calcularHashConfirmacao,
-  construirResumoTexto,
   type ItemCarrinho,
-  type AguardandoConfirmacao,
 } from "../agent/pedido-contexto.js";
 import type { EnderecoEntrega, FormaPagamento, TipoEntrega } from "@prospect/shared";
 
@@ -166,13 +163,14 @@ registerTool({
 registerTool({
   nome: "definir_tipo_entrega",
   descricao:
-    "Define se o pedido é para entrega ou retirada no local, depois de perguntar ao cliente — nunca escolha sozinho. Escolher 'retirada' limpa qualquer endereço já salvo neste pedido (não se aplica).",
+    "Define se o pedido é para entrega ou retirada. SOMENTE WORKFLOW (tarefa 0081): chamada deterministicamente por agent/checkout/transicoes.ts a partir da intenção extraída da mensagem do cliente — nunca oferecida ao LLM. Escolher 'retirada' limpa qualquer endereço já salvo neste pedido (não se aplica).",
   parametrosJsonSchema: {
     type: "object",
     properties: { tipo_entrega: { type: "string", enum: ["entrega", "retirada"] } },
     required: ["tipo_entrega"],
   },
   risco: "baixo",
+  somenteWorkflow: true,
   executor: async (input: { tipo_entrega: TipoEntrega }, ctx: ToolContext) => {
     // Nunca aceita um tipo que a empresa não oferece (config, tasks/0056/
     // 0077) — mesmo que o cliente peça, "de boa" não é uma opção real.
@@ -195,7 +193,7 @@ registerTool({
 registerTool({
   nome: "definir_endereco_entrega",
   descricao:
-    "Define o endereço de entrega deste pedido — implica tipo de entrega 'entrega' (nunca chame pra retirada). Sempre chame depois de o cliente confirmar/informar o endereço, nunca antes (se ele já tem endereço salvo em consultar_cliente, confirme reuso primeiro em vez de pedir tudo de novo). Salva como o endereço padrão do cliente pra próxima conversa.",
+    "Define o endereço de entrega deste pedido — implica tipo de entrega 'entrega'. SOMENTE WORKFLOW (tarefa 0081): chamada deterministicamente por agent/checkout/transicoes.ts quando o cliente informa/confirma um endereço completo — nunca oferecida ao LLM. Salva como o endereço padrão do cliente pra próxima conversa.",
   parametrosJsonSchema: {
     type: "object",
     properties: {
@@ -209,6 +207,7 @@ registerTool({
     required: ["rua", "numero", "bairro", "cidade"],
   },
   risco: "baixo",
+  somenteWorkflow: true,
   executor: async (input: EnderecoEntrega, ctx: ToolContext) => {
     const endereco: EnderecoEntrega = {
       rua: input.rua,
@@ -240,7 +239,7 @@ registerTool({
 registerTool({
   nome: "definir_forma_pagamento",
   descricao:
-    "Registra a forma de pagamento escolhida pelo cliente pra este pedido — pergunte antes de chamar, nunca escolha sozinho. Não existe cobrança real ainda, é só registrar a escolha.",
+    "Registra a forma de pagamento escolhida pelo cliente pra este pedido. SOMENTE WORKFLOW (tarefa 0081): chamada deterministicamente por agent/checkout/transicoes.ts a partir da intenção extraída — nunca oferecida ao LLM. Não existe cobrança real, é só registrar a escolha.",
   parametrosJsonSchema: {
     type: "object",
     properties: {
@@ -249,6 +248,7 @@ registerTool({
     required: ["forma_pagamento"],
   },
   risco: "baixo",
+  somenteWorkflow: true,
   executor: async (input: { forma_pagamento: FormaPagamento }, ctx: ToolContext) => {
     // Nunca aceita uma forma que a empresa não aceita (config, tasks/0056/
     // 0078) — mesmo que o cliente peça, "de boa" não é uma opção real.
@@ -263,38 +263,23 @@ registerTool({
   },
 });
 
-const MINUTOS_EXPIRACAO_CONFIRMACAO = 10;
-
 registerTool({
   nome: "consultar_carrinho",
   descricao: "Consulta o estado atual do carrinho do pedido em construção desta conversa (itens, subtotal, o que ainda falta pra fechar o pedido).",
   parametrosJsonSchema: { type: "object", properties: {} },
   risco: "baixo",
+  // LEITURA PURA (tarefa 0081). Até a tarefa 0080 esta tool também GRAVAVA a
+  // confirmação pendente (`aguardando_confirmacao`) como efeito colateral —
+  // ou seja, um estado transacional nascia de uma decisão do LLM de chamar
+  // uma consulta. Isso agora é uma etapa explícita do workflow
+  // (`sincronizarConfirmacaoPendente`, agent/checkout/transicoes.ts), que
+  // roda em todo turno independentemente do que o modelo resolveu chamar.
   executor: async (_input: unknown, ctx: ToolContext) => {
-    const pedido = await carregarPedidoEmConstrucao(ctx);
-    const pendencias = informacoesPendentes(pedido, ctx.fluxoPedido);
-
-    // Toda vez que o resumo é consultado com o pedido pronto pra fechar
-    // (só falta a confirmação final), registra/refresca determinístico
-    // que ESSE resumo específico foi mostrado — hash+expiração (tarefa
-    // 0022), nunca confia só no julgamento do LLM de que "o cliente
-    // confirmou". Qualquer mutação de carrinho depois disso muda o hash
-    // automaticamente, invalidando a confirmação sem precisar limpar nada
-    // explicitamente (ver criar_pedido, tools/pedido.ts).
-    if (pendencias.length === 1 && pendencias[0] === "confirmacao_final") {
-      const confirmacao: AguardandoConfirmacao = {
-        hash: calcularHashConfirmacao(pedido),
-        expiraEm: new Date(Date.now() + MINUTOS_EXPIRACAO_CONFIRMACAO * 60_000).toISOString(),
-        resumoTexto: construirResumoTexto(pedido),
-      };
-      await salvarConfirmacaoPendente(ctx, confirmacao);
-      return resumoPedidoIa(pedido, confirmacao, ctx.fluxoPedido);
-    }
-
-    // Carrinho ainda não está pronto pra fechar — qualquer confirmação
-    // pendente antiga não faz mais sentido (ex.: cliente reabriu o
-    // carrinho depois de já ter visto um resumo).
-    await salvarConfirmacaoPendente(ctx, undefined);
-    return resumoPedidoIa(pedido, null, ctx.fluxoPedido);
+    const [pedido, confirmacao, ultimoPedidoCriado] = await Promise.all([
+      carregarPedidoEmConstrucao(ctx),
+      carregarConfirmacaoPendente(ctx),
+      carregarUltimoPedidoCriado(ctx),
+    ]);
+    return resumoPedidoIa(pedido, confirmacao, ctx.fluxoPedido, ultimoPedidoCriado);
   },
 });

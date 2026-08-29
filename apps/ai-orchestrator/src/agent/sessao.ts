@@ -14,7 +14,7 @@ import { supabaseAdmin } from "../lib/supabase.js";
 import type { ToolContext } from "../tools/index.js";
 import type { EvidenciaColetada } from "./investigador.js";
 import { pedidoVazio, type OrderContext } from "./pedido-contexto.js";
-import type { AguardandoConfirmacao } from "@prospect/shared";
+import type { AguardandoConfirmacao, UltimoPedidoCriado } from "@prospect/shared";
 
 interface EstadoSessao {
   ultimo_produto_mencionado?: {
@@ -26,6 +26,10 @@ interface EstadoSessao {
    * de `pedido`, nunca dentro dele: é estado da CONVERSA (o que já foi
    * mostrado ao cliente), não do carrinho em si. */
   aguardando_confirmacao?: AguardandoConfirmacao;
+  /** Ponteiro pro último pedido REAL criado nesta conversa (tarefa 0081) —
+   * evidência que sobrevive ao reset do carrinho e chave de idempotência
+   * de `criar_pedido`. Ver `UltimoPedidoCriado` em packages/shared. */
+  ultimo_pedido_criado?: UltimoPedidoCriado;
 }
 
 /** Lê o `estado_json` bruto desta sessão (ou `{}` se não existe linha
@@ -101,6 +105,27 @@ export async function salvarConfirmacaoPendente(
   confirmacao: AguardandoConfirmacao | undefined,
 ): Promise<void> {
   await mesclarEstado(ctx, { aguardando_confirmacao: confirmacao });
+}
+
+/** Último pedido real criado nesta conversa (tarefa 0081) — `null` quando
+ * a IA ainda não fechou nenhum pedido aqui. É a evidência persistida que
+ * `derivarEstadoCheckout` usa pra manter o estado `pedido_criado` depois do
+ * carrinho ser resetado, e a chave de idempotência de `criar_pedido`. */
+export async function carregarUltimoPedidoCriado(ctx: ToolContext): Promise<UltimoPedidoCriado | null> {
+  const estado = await lerEstadoBruto(ctx);
+  return estado.ultimo_pedido_criado ?? null;
+}
+
+/** Grava (ou limpa, passando `undefined`) o ponteiro do pedido criado.
+ * Chamado só por `criar_pedido` (tools/pedido.ts), sempre ANTES de resetar
+ * o Order Context — a ordem importa: se o processo morrer no meio, é melhor
+ * sobrar um ponteiro pra um pedido real do que perder a evidência de que
+ * ele foi criado. */
+export async function salvarUltimoPedidoCriado(
+  ctx: ToolContext,
+  ultimo: UltimoPedidoCriado | undefined,
+): Promise<void> {
+  await mesclarEstado(ctx, { ultimo_pedido_criado: ultimo });
 }
 
 /** Ferramentas cujo resultado pode conter um produto/combo específico —

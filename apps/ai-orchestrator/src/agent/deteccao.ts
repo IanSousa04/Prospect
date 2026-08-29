@@ -111,17 +111,42 @@ export function pedeIdentidade(texto: string): boolean {
  *
  * Ancorado na mensagem inteira (mesmo estilo de `pedeTempoReal`/
  * `pedeIdentidade`) — nunca casa uma confirmação embutida no meio de uma
- * mensagem mais longa/composta (ex.: "sim, mas quero trocar o pagamento"),
- * que fica pro julgamento normal do Investigador. Só é consultado quando já
- * existe uma confirmação pendente válida pro resumo mostrado (ver
- * `orquestrador.ts`) — nunca dispara `criar_pedido` fora desse contexto.
+ * mensagem mais longa/composta (ex.: "sim, mas quero trocar o pagamento").
  */
 const PADROES_CONFIRMACAO_PEDIDO: RegExp[] = [
-  /^\s*(sim|confirmo|confirmado|isso\s+mesmo|[ée]\s+isso(\s+mesmo)?|isso\s+a[íi]|pode\s+confirmar|pode\s+mandar|pode\s+fechar|manda\s+ver|fechar\s+assim|fechado|pode|ok(ay)?|beleza|t[aá]\s+bom|t[aá]\s+certo|show)\s*[^A-Za-zÀ-ú0-9]*$/i,
+  /^\s*(sim|confirmo|confirmado|confirma|confirmar|isso\s+mesmo|isso|[ée]\s+isso(\s+mesmo)?|isso\s+a[íi]|correto|est[aá]\s+(certo|correto)|t[aá]\s+certo|tudo\s+certo|tudo\s+ok|tudo\s+bem|perfeito|pode\s+(confirmar|mandar|ir|fechar|finalizar|enviar|seguir)|manda\s+ver|fechar\s+assim|fechado|fechou|finaliza(r)?|pode|ok(ay)?|beleza|blz|t[aá]\s+bom|show|certo|combinado|isso\s+a[ií]\s+mesmo)\s*[^A-Za-zÀ-ú0-9]*$/i,
 ];
 
+/**
+ * Reconhecimento determinístico de confirmação curta e inequívoca — atalho
+ * grátis do extrator de intenção (agent/checkout/intencao.ts): quando casa,
+ * nem chega a gastar uma chamada de LLM. Continua ancorado na mensagem
+ * inteira, então nunca casa uma confirmação embutida numa mensagem composta
+ * ("sim, mas troca o pagamento") — esse caso vai pro extrator, que enxerga o
+ * estado do workflow e sabe separar as duas coisas.
+ *
+ * IMPORTANTE (tarefa 0081): casar aqui NÃO autoriza nada sozinho. Quem
+ * decide se existe algo pra confirmar é a máquina de estados
+ * (`derivarEstadoCheckout`) — fora de `aguardando_confirmacao`, um "tudo
+ * certo" continua sendo conversa social.
+ */
 export function confirmaResumoPendente(texto: string): boolean {
   return PADROES_CONFIRMACAO_PEDIDO.some((regex) => regex.test(texto));
+}
+
+/**
+ * Negação curta e inequívoca ("não", "ainda não", "espera") — o par
+ * simétrico de `confirmaResumoPendente`. Existe pelo mesmo motivo: uma
+ * recusa ao resumo final nunca pode ser confundida com confirmação nem
+ * escorregar pro julgamento livre do modelo, e reconhecê-la em código evita
+ * gastar uma chamada de LLM no caso mais comum.
+ */
+const PADROES_NEGACAO_PEDIDO: RegExp[] = [
+  /^\s*(n[ãa]o|nao|n|nn|ainda\s+n[ãa]o|agora\s+n[ãa]o|espera(\s+a[ií])?|pera(\s+a[ií])?|calma|nada\s+disso|de\s+jeito\s+nenhum|cancela(r)?|deixa\s+pra\s+l[áa])\s*[^A-Za-zÀ-ú0-9]*$/i,
+];
+
+export function negaResumoPendente(texto: string): boolean {
+  return PADROES_NEGACAO_PEDIDO.some((regex) => regex.test(texto));
 }
 
 /**

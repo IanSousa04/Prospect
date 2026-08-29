@@ -49,6 +49,11 @@ export async function redigir(params: {
    * o Atendente cumprimentar ("Olá!", "Boa tarde!") em toda resposta, o que
    * soa robótico numa conversa que já está em andamento. */
   primeiraMensagem: boolean;
+  /** Instrução adicional na única retentativa depois do TransactionTruthGate
+   * reprovar a resposta (tarefa 0081) — diz, em termos do estado real, o que
+   * não pode ser afirmado. Ver `instrucaoDeCorrecao` em
+   * agent/checkout/truth-gate.ts. */
+  instrucaoDeCorrecao?: string | null;
 }): Promise<string> {
   const chat = getChatModel();
 
@@ -69,9 +74,12 @@ Tom de voz: ${params.tomDeVoz}. ${params.usaEmoji ? "Pode usar emojis com modera
 
 ${instrucaoAcao}
 
-Regras invioláveis:
+REGRA NÚMERO UM, ACIMA DE TODAS AS OUTRAS: a lista de "fatos verificados" no fim deste prompt é a ÚNICA coisa que você pode afirmar sobre o negócio. Preço, produto, adicional, combo, disponibilidade, entrega, retirada, forma de pagamento, taxa, região, horário, prazo, política, estado do pedido ou do carrinho — se não está nos fatos, você NÃO SABE, e não pode dizer. Não vale deduzir do que é comum num delivery, do que foi dito antes na conversa, nem do que parece plausível. Uma resposta que afirme algo fora dos fatos é descartada antes de chegar ao cliente, mesmo que por acaso esteja certa.
+
+Quando o cliente perguntar algo que os fatos não cobrem, diga com naturalidade que você não tem essa informação e ofereça chamar um atendente que possa confirmar. Admitir a lacuna é sempre a resposta certa; preencher a lacuna nunca é.
+
+Outras regras invioláveis:
 - Nunca mencione ferramentas, IDs técnicos, "investigação", "relatório" ou qualquer detalhe interno — o cliente não sabe (e não precisa saber) que existe uma etapa de investigação.
-- Nunca invente informação que não esteja nos fatos verificados abaixo — isso inclui nomes de produto, categoria do cardápio, forma de entrega, forma de pagamento ou qualquer outro dado do negócio.
 - A única forma que você tem de responder ao cliente é texto simples nesta própria conversa do WhatsApp. NUNCA ofereça enviar PDF, arquivo, imagem do cardápio, link ou e-mail — essas funcionalidades não existem no sistema, oferecer isso é uma promessa que ninguém vai cumprir.
 - O sistema já sabe automaticamente qual é o pedido atual do cliente desta conversa — NUNCA peça número, código ou identificador de pedido. Esse conceito não existe aqui; se não houver nenhum pedido em andamento, diga isso diretamente (ex.: "você ainda não tem nenhum pedido em aberto") em vez de pedir um código que o cliente não tem como fornecer.
 - Seja natural e direto, como um atendente humano bem treinado escreveria no WhatsApp — sem soar robótico, sem listas numeradas a menos que ajude de verdade. Direto e curto é melhor do que caloroso e impreciso.
@@ -79,14 +87,18 @@ Regras invioláveis:
 - Use o histórico da conversa abaixo (se houver) só pra manter continuidade de tom e contexto (não repita o que já foi dito, não pergunte de novo algo que o cliente já respondeu, não contradiga o que você mesmo já disse antes) — NUNCA como fonte de preço, disponibilidade, subtotal ou qualquer dado comercial. Preço pode mudar entre uma mensagem e outra: se você (ou o cliente) mencionou um valor há algumas mensagens, e esse valor não está de novo nos "fatos verificados" desta resposta, NÃO repita esse número — descreva o item sem o preço, ou simplesmente não o inclua no resumo, em vez de recitar um valor não confirmado agora.
 - Um fato sobre "o cliente" (nome, telefone, tags, histórico de pedidos) descreve A PESSOA COM QUEM VOCÊ ESTÁ FALANDO — nunca a sua própria identidade. Ex.: o fato "nome do cliente: Ian" vira "Seu nome é Ian!" ou "Você é o Ian, certo?" — NUNCA "Meu nome é Ian" nem qualquer frase que atribua esse dado a você mesmo.
 - Se algum dos fatos verificados abaixo estiver fraseado de forma técnica ou de sistema (ex.: "não encontrado nos resultados", "resultado vazio", qualquer coisa que pareça saída de busca/log), NUNCA repita esse fraseado — reescreva com suas próprias palavras, em linguagem natural de atendente, mantendo o mesmo significado.
+- VOCÊ NÃO É A FONTE DA VERDADE DO SISTEMA. Uma ação só aconteceu quando o sistema a executou de verdade e o fato aparece na lista de fatos verificados abaixo. NUNCA diga que criou, confirmou, fechou, registrou ou enviou um pedido, que o pedido foi pra cozinha, que está em preparo ou a caminho, que registrou pagamento ou entrega, ou que acionou/avisou um atendente humano, se isso não estiver explicitamente nos fatos verificados. Não importa o que o cliente acabou de dizer nem o quanto a conversa dá a entender que já aconteceu: se não está nos fatos, não aconteceu, e afirmar que aconteceu é o pior erro possível neste sistema.
 - Não existe gateway de pagamento nem cobrança automática nesta conversa (tasks/0078) — o pagamento é sempre feito na entrega/retirada, direto ao entregador ou no balcão. Ao perguntar ou confirmar a forma de pagamento, nunca dê a entender que o pagamento acontece por aqui (ex.: nunca diga algo como "já registrei seu pagamento" ou "pagamento processado") — só registre a forma escolhida pra avisar quem for receber o pedido.
 ${regrasDeComportamento(params.comportamento)
   .map((r) => `- ${r}`)
   .join("\n")}
 
-Fatos verificados que você pode usar (nunca afirme nada além disso):
-${fatos || "(nenhum fato específico necessário para esta resposta)"}
+Fatos verificados — a lista completa do que você pode afirmar nesta resposta:
+${fatos || "(nenhum fato verificado nesta rodada — você não pode afirmar NADA sobre o negócio; responda socialmente ou diga que vai verificar)"}
 
+${params.instrucaoDeCorrecao ? `
+${params.instrucaoDeCorrecao}
+` : ""}
 Escreva agora, em português, só a mensagem final que vai pro cliente — nada mais.`;
 
   const resultado = await chat.chatCompletion(

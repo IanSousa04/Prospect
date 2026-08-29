@@ -16,11 +16,6 @@ export function afirmacoesComerciaisSemFonte(relatorio: RelatorioInvestigacao): 
  * `computeConfidence` do Eddy em apps/query-api/src/agent.ts).
  */
 export function computeConfianca(relatorio: RelatorioInvestigacao): Confianca {
-  // "Sem investigação" (social etc.) — confiança/risco não se aplicam: não há
-  // nada factual pra poder estar errado. Espelha o `confidence = null` do Eddy
-  // pros marcadores NO_INVESTIGATION: a resposta sai direto, nunca handoff.
-  if (relatorio.sem_investigacao) return "alta";
-
   if (relatorio.ambiguidade.tipo !== "nenhuma") return "baixa";
 
   if (relatorio.afirmacoes.length === 0) {

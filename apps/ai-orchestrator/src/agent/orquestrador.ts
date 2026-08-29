@@ -1,11 +1,18 @@
 import type { ComportamentoJson, MotivoBloqueioAcao } from "@prospect/shared";
+import { derivarEstadoCheckout, informacoesPendentes } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { criarHandoff } from "../handoffs.js";
 import type { ChatMessage } from "../llm/types.js";
 import type { ToolContext } from "../tools/index.js";
-import { getRiscoFerramenta, executeTool } from "../tools/index.js";
-import { investigar, criarPedidoDisponivel, type EvidenciaColetada } from "./investigador.js";
-import { carregarSessao, atualizarSessaoComEvidencias, carregarPedidoEmConstrucao, carregarConfirmacaoPendente } from "./sessao.js";
+import { getRiscoFerramenta } from "../tools/index.js";
+import { investigar, type EvidenciaColetada } from "./investigador.js";
+import {
+  carregarSessao,
+  atualizarSessaoComEvidencias,
+  carregarPedidoEmConstrucao,
+  carregarConfirmacaoPendente,
+  carregarUltimoPedidoCriado,
+} from "./sessao.js";
 import { redigir } from "./atendente.js";
 import { computeConfianca } from "./confianca.js";
 import { decidir } from "./decisao.js";
@@ -14,10 +21,28 @@ import {
   contemPromessaNaoSuportada,
   contemProdutoNaoVerificado,
   pedeCodigoDePedido,
-  contemConfirmacaoDePedidoNaoVerificada,
 } from "./verificacao.js";
 import { sanitizarFormatacaoWhatsapp } from "./sanitizacao.js";
 import { mensagemDePedidoConfirmado, type ResumoPedidoConfirmado } from "./confirmacao-pedido.js";
+import {
+  interpretarMensagem,
+  type AssuntoPerguntado,
+  type IntencaoDaMensagem,
+} from "./interpretacao/mensagem.js";
+import { resolverItensMencionados, type ResultadoResolucaoItens } from "./interpretacao/itens.js";
+import { resolverPerguntas } from "./interpretacao/roteamento.js";
+import { PORTAS_REAIS } from "./portas.js";
+import { instrucaoDeCorrecaoDeLastro, verificarLastro } from "./lastro.js";
+import { aplicarIntencao, sincronizarConfirmacaoPendente } from "./checkout/transicoes.js";
+import {
+  fatosParaAfirmacoes,
+  fatosParaLastro,
+  mensagemDeterministicaDeFallback,
+  montarFatosVerificados,
+  type FatosVerificados,
+} from "./checkout/fatos.js";
+import { avaliarRespostaTransacional, instrucaoDeCorrecao } from "./checkout/truth-gate.js";
+import { registrarInvariante } from "./checkout/invariantes.js";
 import {
   buscarPromptInjectionEmEvidencia,
   relatorioObedeceuInjection,
@@ -30,14 +55,8 @@ import {
   mensagemSemTempoReal,
   pedeIdentidade,
   mensagemDeIdentidade,
-  confirmaResumoPendente,
 } from "./deteccao.js";
-import type {
-  RelatorioInvestigacao,
-  Confianca,
-  AcaoDecidida,
-  Risco,
-} from "./types.js";
+import type { RelatorioInvestigacao, Confianca, AcaoDecidida, Risco, Afirmacao } from "./types.js";
 
 export interface ProcessarMensagemParams {
   pergunta: string;
@@ -121,11 +140,32 @@ export function motivoBloqueioParaTexto(
   }
 }
 
+function relatorioDeterministico(ferramentasChamadas: number): RelatorioInvestigacao {
+  return { afirmacoes: [], ambiguidade: { tipo: "nenhuma" }, ferramentasChamadas };
+}
+
+/** Última mensagem que o próprio sistema enviou — é o contexto que dá
+ * sentido a uma resposta curta ("tudo certo" responde O QUÊ?). Sem isso a
+ * classificação de intenção volta a ser feita sobre texto isolado, que é
+ * exatamente o erro que esta tarefa elimina (item 4 da especificação). */
+function ultimaPerguntaDoSistema(historico: ChatMessage[]): string | null {
+  for (let i = historico.length - 1; i >= 0; i--) {
+    const mensagem = historico[i]!;
+    if (mensagem.role === "assistant" && mensagem.content.trim().length > 0) return mensagem.content;
+  }
+  return null;
+}
+
 /**
- * Ponto de entrada por mensagem do cliente. Orquestra Investigador →
- * confiança → decisão → Atendente → verificação anti-alucinação → (se
- * necessário) handoff. Não sabe nada sobre WhatsApp/polling — isso é do
- * chamador (Passo 6 do plano).
+ * Ponto de entrada por mensagem do cliente.
+ *
+ * Ordem (tarefa 0081 — a LLM interpreta, o workflow decide, o backend
+ * executa, o banco confirma, o workflow autoriza, a LLM comunica):
+ *
+ *   gates fixos → estado real do checkout → intenção (LLM só rotula) →
+ *   mutações obrigatórias + criação (código) → investigação (LLM, sem poder
+ *   mexer em estado transacional) → sincronização do resumo → fatos
+ *   verificados → redação → TransactionTruthGate.
  */
 export async function processarMensagem(
   params: ProcessarMensagemParams,
@@ -136,79 +176,48 @@ export async function processarMensagem(
   // essa decisão na mão do modelo (ver agent/deteccao.ts: um caso real de
   // produção mostrou a IA negando ser IA quando o cliente pediu humano).
   if (clientePediuHumano(pergunta)) {
-    const relatorioVazio: RelatorioInvestigacao = {
-      sem_investigacao: false,
-      afirmacoes: [],
-      ambiguidade: { tipo: "nenhuma" },
-      ferramentasChamadas: 0,
-    };
     await registrarDecisao({
       ctx,
       confianca: "alta",
       cobertura: 0,
       acao: "handoff",
-      relatorio: relatorioVazio,
+      relatorio: relatorioDeterministico(0),
     });
     await criarHandoff(ctx.empresaId, {
       atendimento_id: ctx.atendimentoId,
       origem: "cliente_solicitou",
       motivo: "Cliente pediu para falar com um atendente humano",
       resumo: `Cliente disse: "${pergunta}"`,
-      acao_sugerida:
-        "Assumir a conversa e continuar o atendimento diretamente.",
+      acao_sugerida: "Assumir a conversa e continuar o atendimento diretamente.",
       prioridade: "alta",
     });
-    return {
-      acao: "handoff",
-      respostaTexto: mensagemDeTransferencia(params.usaEmoji),
-      confianca: "alta",
-    };
+    return { acao: "handoff", respostaTexto: mensagemDeTransferencia(params.usaEmoji), confianca: "alta" };
   }
 
   // Hora/data atual ("que horas são?") — DETERMINÍSTICA, antes de qualquer
   // chamada ao LLM, resposta fixa nunca gerada pelo modelo (mesmo motivo de
-  // `clientePediuHumano` acima: o LLM "inventa" um horário plausível). Regra
-  // zero-B do Eddy (SEM_TEMPO_REAL) traduzida pro idioma determinístico do
-  // Prospect. Confiança alta e sem_investigacao=true no relatório porque não
-  // é uma investigação de verdade.
+  // `clientePediuHumano` acima: o LLM "inventa" um horário plausível).
   if (pedeTempoReal(pergunta)) {
-    const relatorioVazio: RelatorioInvestigacao = {
-      sem_investigacao: true,
-      afirmacoes: [],
-      ambiguidade: { tipo: "nenhuma" },
-      ferramentasChamadas: 0,
-    };
     await registrarDecisao({
       ctx,
       confianca: "alta",
       cobertura: 0,
       acao: "responder",
-      relatorio: relatorioVazio,
+      relatorio: relatorioDeterministico(0),
     });
-    return {
-      acao: "responder",
-      respostaTexto: mensagemSemTempoReal(params.usaEmoji),
-      confianca: "alta",
-    };
+    return { acao: "responder", respostaTexto: mensagemSemTempoReal(params.usaEmoji), confianca: "alta" };
   }
 
   // Identidade da IA ("quem é você?", "você é um robô?") — DETERMINÍSTICA,
   // mesmo motivo dos dois blocos acima: episódio real de produção mostrou a
-  // IA afirmando ser humana quando perguntada. Nunca deixa essa resposta na
-  // mão livre do LLM, nem pra confirmar nem pra negar (ver deteccao.ts).
+  // IA afirmando ser humana quando perguntada.
   if (pedeIdentidade(pergunta)) {
-    const relatorioVazio: RelatorioInvestigacao = {
-      sem_investigacao: true,
-      afirmacoes: [],
-      ambiguidade: { tipo: "nenhuma" },
-      ferramentasChamadas: 0,
-    };
     await registrarDecisao({
       ctx,
       confianca: "alta",
       cobertura: 0,
       acao: "responder",
-      relatorio: relatorioVazio,
+      relatorio: relatorioDeterministico(0),
     });
     return {
       acao: "responder",
@@ -217,103 +226,196 @@ export async function processarMensagem(
     };
   }
 
-  // Gate determinístico da etapa de confirmação final (motor de etapas,
-  // tasks/0056/0077/0078) — resolve o episódio real que motivou este bloco:
-  // cliente respondeu só "Sim" a um resumo já apresentado, e o Investigador
-  // (LLM) simplesmente não chamou "criar_pedido" nesta rodada, deixando o
-  // Atendente escrever "Pedido confirmado!" sem nenhuma criação real ter
-  // acontecido — só a verificação anti-alucinação pegou isso, tarde demais
-  // (handoff mudo em vez de fechar o pedido). Mesmo padrão determinístico
-  // dos 3 blocos acima, aplicado à ação mais crítica do sistema: trata a
-  // etapa `confirmacao_final` como um "slot" preenchido por reconhecimento
-  // determinístico, não por interpretação livre do LLM a cada turno (mesmo
-  // padrão consolidado pela indústria pra IA conversacional transacional —
-  // Rasa CALM, ver nota de pesquisa no plano desta tarefa). Só dispara
-  // quando já existe uma confirmação pendente válida pro resumo mostrado
-  // (`criarPedidoDisponivel` — mesmo gate de exposição usado dentro de
-  // `investigar()`), então nunca cria um pedido "por engano" a partir de um
-  // "sim"/"ok" solto sem relação com pedido nenhum.
-  if (confirmaResumoPendente(pergunta)) {
-    const pedidoAtual = await carregarPedidoEmConstrucao(ctx);
-    const confirmacaoPendente = await carregarConfirmacaoPendente(ctx);
+  // ================= 1. INTERPRETAR (LLM, sempre) =================
+  // Roda em TODA mensagem, não só dentro do checkout. Foi a condição "só
+  // quando já existe carrinho" que deixou o pipeline da 0081 inerte numa
+  // conversa inteira: sem item, nada disso ligava, e a decisão de chamar
+  // ferramenta voltava a ser do modelo.
+  const [pedidoAntes, confirmacaoAntes, ultimoPedidoAntes, sessao] = await Promise.all([
+    carregarPedidoEmConstrucao(ctx),
+    carregarConfirmacaoPendente(ctx),
+    carregarUltimoPedidoCriado(ctx),
+    carregarSessao(ctx),
+  ]);
+  const estadoAntes = derivarEstadoCheckout(pedidoAntes, confirmacaoAntes, ultimoPedidoAntes, ctx.fluxoPedido);
 
-    if (criarPedidoDisponivel(pedidoAtual, confirmacaoPendente, ctx.fluxoPedido)) {
-      const execucao = await executeTool("criar_pedido", {}, ctx);
-      const output = execucao.sucesso ? (execucao.output as Record<string, unknown>) : null;
+  const intencao: IntencaoDaMensagem = await interpretarMensagem({
+    pergunta,
+    estado: estadoAntes,
+    pendencias: informacoesPendentes(pedidoAntes, ctx.fluxoPedido),
+    ultimaPerguntaDoSistema: ultimaPerguntaDoSistema(historico),
+    config: ctx.fluxoPedido,
+  });
 
-      if (output?.pedido_criado === true) {
-        // Mesma mensagem fixa (nunca escrita livre pelo Atendente) usada
-        // pelo caminho normal mais abaixo neste arquivo (pedidoConfirmadoAgora).
-        const resumo = output as unknown as ResumoPedidoConfirmado;
-        const texto = mensagemDePedidoConfirmado(resumo, params.usaEmoji);
-        const relatorioVazio: RelatorioInvestigacao = {
-          sem_investigacao: false,
-          afirmacoes: [],
-          ambiguidade: { tipo: "nenhuma" },
-          ferramentasChamadas: 1,
-        };
-        await registrarDecisao({ ctx, confianca: "alta", cobertura: 0, acao: "responder", relatorio: relatorioVazio, risco: "alto" });
-        return { acao: "responder", respostaTexto: texto, confianca: "alta" };
-      }
+  // ================= 2. RESOLVER ITENS (código) =================
+  // Cada item citado vira busca real no catálogo e, com match único,
+  // `adicionar_ao_carrinho` executado pelo código. Zero resultados vira fato
+  // negativo explícito. Nunca depende de o modelo lembrar de chamar a tool.
+  const itensResolvidos: ResultadoResolucaoItens = await resolverItensMencionados({
+    itens: intencao.itens,
+    ctx,
+    portas: PORTAS_REAIS,
+  });
 
-      if (output?.erro === "confirmacao_humana_necessaria") {
-        const detalhe = output as { motivo: MotivoBloqueioAcao; total?: number };
-        const relatorioVazio: RelatorioInvestigacao = {
-          sem_investigacao: false,
-          afirmacoes: [],
-          ambiguidade: { tipo: "nenhuma" },
-          ferramentasChamadas: 1,
-        };
-        await registrarDecisao({ ctx, confianca: "alta", cobertura: 0, acao: "handoff", relatorio: relatorioVazio, risco: "alto" });
-        await criarHandoff(ctx.empresaId, {
-          atendimento_id: ctx.atendimentoId,
-          origem: "alto_risco",
-          motivo: motivoBloqueioParaTexto("criar_pedido", detalhe),
-          resumo: `Cliente confirmou o pedido ("${pergunta}"), mas a execução automática foi bloqueada pela configuração de risco da empresa (CLAUDE.md regra 6 — ação irreversível ou de alto impacto).`,
-          acao_sugerida: "Revisar no painel e executar manualmente, ou aprovar com o cliente antes.",
-          prioridade: "alta",
-        });
-        return { acao: "handoff", respostaTexto: null, confianca: "alta" };
-      }
+  // ================= 3. MUTAR SLOTS + CONFIRMAÇÃO (código) =================
+  const transicao = await aplicarIntencao({ ctx, intencao, config: ctx.fluxoPedido });
 
-      // erro: "pedido_incompleto" / "confirmacao_expirada_ou_invalida" (ou
-      // qualquer outra coisa inesperada) — pode ser falso positivo do regex,
-      // ou o carrinho mudou entre o resumo e esta mensagem. Nunca trata como
-      // confirmação real: cai pro fluxo normal de `investigar()` como se
-      // este bloco não tivesse rodado — as redes de segurança já existentes
-      // (`sintetizarAfirmacaoDePedidoIncompleto`/
-      // `sintetizarAfirmacaoDeConfirmacaoExpirada`) cuidam de reapresentar o
-      // resumo atualizado.
-    }
+  // Pedido criado de verdade: mensagem montada em código a partir do retorno
+  // real de `criar_pedido`, nunca escrita pelo Atendente.
+  if (transicao.pedidoCriadoAgora && transicao.saidaCriacao) {
+    const texto = mensagemDePedidoConfirmado(
+      transicao.saidaCriacao as unknown as ResumoPedidoConfirmado,
+      params.usaEmoji,
+    );
+    await registrarDecisao({
+      ctx,
+      confianca: "alta",
+      cobertura: 0,
+      acao: "responder",
+      relatorio: relatorioDeterministico(transicao.evidencias.length),
+      risco: "alto",
+    });
+    return { acao: "responder", respostaTexto: texto, confianca: "alta" };
   }
 
-  // Memória curta entre turnos (ver agent/sessao.ts) — carregada antes da
-  // investigação pra dar contexto de "último produto mencionado" quando o
-  // histórico bruto passado ao Investigador não cobre mais aquela mensagem.
-  const sessao = await carregarSessao(ctx);
+  // Confirmação bloqueada pela configuração de risco da empresa (CLAUDE.md
+  // regra 6) — handoff estruturado, com evidência de handoff.
+  if (transicao.bloqueioDeRisco) {
+    await registrarDecisao({
+      ctx,
+      confianca: "alta",
+      cobertura: 0,
+      acao: "handoff",
+      relatorio: relatorioDeterministico(transicao.evidencias.length),
+      risco: "alto",
+    });
+    const handoffId = await criarHandoff(ctx.empresaId, {
+      atendimento_id: ctx.atendimentoId,
+      origem: "alto_risco",
+      motivo: motivoBloqueioParaTexto("criar_pedido", transicao.bloqueioDeRisco),
+      resumo: `Cliente confirmou o pedido ("${pergunta}"), mas a execução automática foi bloqueada pela configuração de risco da empresa (CLAUDE.md regra 6 — ação irreversível ou de alto impacto).`,
+      acao_sugerida: "Revisar no painel e executar manualmente, ou aprovar com o cliente antes.",
+      prioridade: "alta",
+    });
+    if (!handoffId) await registrarInvariante(ctx, "handoff_without_handoff_id", { origem: "alto_risco" });
+    return { acao: "handoff", respostaTexto: null, confianca: "alta" };
+  }
+
+  // Cancelar um pedido REAL não tem ferramenta (tasks/0058) — nunca fingir
+  // que cancelou nem deixar o Atendente improvisar: handoff estruturado.
+  if (intencao.quer_cancelar && estadoAntes === "pedido_criado") {
+    await registrarDecisao({
+      ctx,
+      confianca: "alta",
+      cobertura: 0,
+      acao: "handoff",
+      relatorio: relatorioDeterministico(transicao.evidencias.length),
+      risco: "alto",
+    });
+    const handoffId = await criarHandoff(ctx.empresaId, {
+      atendimento_id: ctx.atendimentoId,
+      origem: "acao_sem_permissao",
+      motivo: "Cliente pediu para cancelar um pedido já criado",
+      resumo: `Cliente disse: "${pergunta}". Existe um pedido real criado nesta conversa e a IA não tem ferramenta de cancelamento.`,
+      acao_sugerida: "Avaliar o cancelamento no painel e responder ao cliente.",
+      prioridade: "alta",
+    });
+    if (!handoffId) await registrarInvariante(ctx, "handoff_without_handoff_id", { origem: "acao_sem_permissao" });
+    return { acao: "handoff", respostaTexto: null, confianca: "alta" };
+  }
+
+  // Ferramenta de escrita NEGADA pela empresa (CLAUDE.md regra 2) — a IA está
+  // estruturalmente impedida de concluir o pedido. Continuar conversando é o
+  // pior desfecho: o gabarito flagrou o Atendente improvisando uma lista
+  // inventada de formas de pagamento pra justificar a recusa.
+  const ferramentaNegada = [...transicao.falhas, ...itensResolvidos.falhas].find(
+    (f) => f.erro === "ferramenta_nao_permitida",
+  );
+  if (ferramentaNegada) {
+    await registrarDecisao({
+      ctx,
+      confianca: "alta",
+      cobertura: 0,
+      acao: "handoff",
+      relatorio: relatorioDeterministico(transicao.evidencias.length),
+      risco: "alto",
+    });
+    const handoffId = await criarHandoff(ctx.empresaId, {
+      atendimento_id: ctx.atendimentoId,
+      origem: "acao_sem_permissao",
+      motivo: `A IA não tem permissão configurada para "${ferramentaNegada.tool}"`,
+      resumo: `Cliente disse: "${pergunta}", o que exige a ação "${ferramentaNegada.tool}" — não permitida em ia_permissoes para esta empresa. O pedido não pode ser fechado automaticamente.`,
+      acao_sugerida: `Assumir a conversa e concluir no painel, ou liberar "${ferramentaNegada.tool}" nas permissões da IA.`,
+      prioridade: "alta",
+    });
+    if (!handoffId) await registrarInvariante(ctx, "handoff_without_handoff_id", { origem: "acao_sem_permissao" });
+    return { acao: "handoff", respostaTexto: null, confianca: "alta" };
+  }
+
+  // ================= 4. ROTEAR PERGUNTAS (código escolhe a tool) =================
+  // O modelo rotulou o assunto; quem escolhe e executa a ferramenta é o
+  // código. Garante que nenhuma pergunta de negócio é respondida sem pelo
+  // menos uma execução real por trás.
+  const assuntos: AssuntoPerguntado[] = [...intencao.perguntas];
+  // Informar entrega/retirada/pagamento também exige a configuração como
+  // fato: é ela que impede afirmar "não fazemos entrega" numa loja que faz.
+  if (intencao.tipo_entrega || intencao.forma_pagamento || intencao.endereco) {
+    if (!assuntos.includes("opcoes_atendimento")) assuntos.push("opcoes_atendimento");
+  }
+
+  const produtoDeReferencia =
+    itensResolvidos.adicionados[itensResolvidos.adicionados.length - 1]?.produto_id ??
+    sessao?.ultimo_produto_mencionado?.id ??
+    null;
+
+  const roteamento = await resolverPerguntas({
+    perguntas: assuntos,
+    ctx,
+    portas: PORTAS_REAIS,
+    produtoDeReferencia,
+    termoLivre: pergunta,
+  });
+
+  if (intencao.perguntas.length > 0 && roteamento.evidencias.length === 0) {
+    await registrarInvariante(ctx, "question_without_tool_call", { assuntos: intencao.perguntas });
+  }
+
+  const evidenciasDeterministicas = [
+    ...transicao.evidencias,
+    ...itensResolvidos.evidencias,
+    ...roteamento.evidencias,
+  ];
+
+  // ================= 5. INVESTIGAR (aditivo) =================
   const contextoSessao = sessao?.ultimo_produto_mencionado
     ? `Contexto de sessão: o cliente mencionou por último o produto/combo "${sessao.ultimo_produto_mencionado.nome}" (id: ${sessao.ultimo_produto_mencionado.id}). Use isso só se a pergunta atual claramente se referir a ele por pronome/referência implícita (ex.: "esse", "ele", "o mesmo") — nunca para responder sobre um produto diferente.`
     : null;
 
-  const { relatorio, evidencias } = await investigar(pergunta, historico, ctx, params.comportamento, contextoSessao);
-  // Não bloqueia a resposta ao cliente por causa de memória auxiliar —
-  // atualiza depois de já ter as evidências, mas antes do retorno, pra não
-  // perder o resultado de rodadas onde a IA acaba fazendo handoff.
-  await atualizarSessaoComEvidencias(ctx, evidencias);
+  let relatorio: RelatorioInvestigacao = relatorioDeterministico(0);
+  let evidenciasDaRodada = evidenciasDeterministicas;
 
-  // Veto determinístico, ANTES de qualquer decisão (mesmo espírito do guard
-  // de prompt injection abaixo): se QUALQUER tool de escrita (tarefa 0023 —
-  // generaliza o que a 0055 fez só pra "criar_pedido") recusou agir por
-  // exigência da própria empresa configurada em `ia_permissoes`
-  // (`avaliarRiscoAcao`, packages/shared/src/risco-acao.ts — exige
-  // confirmação humana, valor acima do limite, ou status de pedido não
-  // permitido, CLAUDE.md regra 6), isso é definitivo — nunca deixa o resto
-  // da pipeline (LLM decidindo relatório/resposta) tentar "resolver" ou
-  // insistir. Handoff sempre, sem depender do modelo perceber isso sozinho.
-  // Qualquer tool futura (cancelar_pedido, alterar_item) que devolva o
-  // mesmo formato `{erro:"confirmacao_humana_necessaria", motivo, ...}` é
-  // coberta automaticamente aqui, sem precisar editar este arquivo de novo.
-  const bloqueioAcaoAltoRisco = evidencias.find(
+  if (!intencao.social) {
+    const investigacao = await investigar(
+      pergunta,
+      historico,
+      ctx,
+      params.comportamento,
+      contextoSessao,
+      evidenciasDeterministicas,
+    );
+    relatorio = investigacao.relatorio;
+    evidenciasDaRodada = investigacao.evidencias;
+    await atualizarSessaoComEvidencias(ctx, investigacao.evidencias);
+  }
+
+  // ================= 6. RELER, SINCRONIZAR E MONTAR FATOS =================
+  const sincronizacao = await sincronizarConfirmacaoPendente({ ctx, config: ctx.fluxoPedido });
+  const evidenciasTotais = [...evidenciasDaRodada, ...sincronizacao.evidencias];
+
+  // Veto determinístico (tarefa 0023): tool de escrita recusada por exigência
+  // da própria empresa é definitivo — handoff, sem deixar o resto da pipeline
+  // tentar "resolver".
+  const bloqueioAcaoAltoRisco = evidenciasTotais.find(
     (e) =>
       e.output &&
       typeof e.output === "object" &&
@@ -321,21 +423,15 @@ export async function processarMensagem(
   );
   if (bloqueioAcaoAltoRisco) {
     const detalhe = bloqueioAcaoAltoRisco.output as { motivo: MotivoBloqueioAcao; total?: number };
-    const relatorioVazio: RelatorioInvestigacao = {
-      sem_investigacao: false,
-      afirmacoes: [],
-      ambiguidade: { tipo: "nenhuma" },
-      ferramentasChamadas: relatorio.ferramentasChamadas,
-    };
     await registrarDecisao({
       ctx,
       confianca: "alta",
       cobertura: 0,
       acao: "handoff",
-      relatorio: relatorioVazio,
+      relatorio: relatorioDeterministico(relatorio.ferramentasChamadas),
       risco: "alto",
     });
-    await criarHandoff(ctx.empresaId, {
+    const handoffId = await criarHandoff(ctx.empresaId, {
       atendimento_id: ctx.atendimentoId,
       origem: "alto_risco",
       motivo: motivoBloqueioParaTexto(bloqueioAcaoAltoRisco.toolNome, detalhe),
@@ -343,36 +439,24 @@ export async function processarMensagem(
       acao_sugerida: "Revisar no painel e executar manualmente, ou aprovar com o cliente antes.",
       prioridade: "alta",
     });
+    if (!handoffId) await registrarInvariante(ctx, "handoff_without_handoff_id", { origem: "alto_risco" });
     return { acao: "handoff", respostaTexto: null, confianca: "alta" };
   }
 
-  // Guard contra prompt injection via conhecimento/ferramentas (ROADMAP.md §1,
-  // tarefa 0010): checagem determinística ANTES de qualquer decisão. Se
-  // alguma evidência contém padrão de injection E o relatório do Investigador
-  // reproduz esse padrão (literal ou estrutural), isso indica que o modelo
-  // "obedeceu" uma instrução embutida em vez de apenas citar um fato — veta e
-  // força handoff humano (nunca tenta "corrigir" o dado, que pode ter sido
-  // injetado maliciosamente no conhecimento).
-  const camposComInjection = evidencias.flatMap((e) => buscarPromptInjectionEmEvidencia(e.output));
+  // Guard contra prompt injection via conhecimento/ferramentas (tarefa 0010).
+  const camposComInjection = evidenciasTotais.flatMap((e) => buscarPromptInjectionEmEvidencia(e.output));
   if (camposComInjection.length > 0) {
-    // Se evidência tinha injection, checa se o relatório obedeceu
     const textoRelatorio = JSON.stringify(relatorio.afirmacoes.map((a) => a.texto));
-    const checkObediencia = relatorioObedeceuInjection(textoRelatorio, evidencias);
-    const trechosCopiados = detectarCopiaLiteralDeInjection(textoRelatorio, evidencias);
+    const checkObediencia = relatorioObedeceuInjection(textoRelatorio, evidenciasTotais);
+    const trechosCopiados = detectarCopiaLiteralDeInjection(textoRelatorio, evidenciasTotais);
 
     if (checkObediencia.obedeceu || trechosCopiados.length > 0) {
-      const relatorioVazio: RelatorioInvestigacao = {
-        sem_investigacao: false,
-        afirmacoes: [],
-        ambiguidade: { tipo: "nenhuma" },
-        ferramentasChamadas: relatorio.ferramentasChamadas,
-      };
       await registrarDecisao({
         ctx,
         confianca: "baixa",
         cobertura: 0,
         acao: "handoff",
-        relatorio: relatorioVazio,
+        relatorio: relatorioDeterministico(relatorio.ferramentasChamadas),
       });
       await criarHandoff(ctx.empresaId, {
         atendimento_id: ctx.atendimentoId,
@@ -385,44 +469,33 @@ export async function processarMensagem(
       });
       return { acao: "handoff", respostaTexto: null, confianca: "baixa" };
     }
-    // Se evidência tinha injection mas o relatório resistiu (não reproduziu),
-    // continua — o modelo seguiu a regra 5 do prompt do Investigador.
   }
 
-  // Confirmação de pedido criado (CLAUDE.md regra 6) — desvia do Atendente
-  // (LLM) inteiramente: a mensagem final pro cliente é montada em código só
-  // a partir do retorno real de "criar_pedido", nunca escrita livre por um
-  // segundo LLM que poderia omitir/errar um item ou, no episódio real que
-  // motivou isto, afirmar uma confirmação que nunca aconteceu de verdade
-  // (ver agent/confirmacao-pedido.ts). Mesmo padrão de curto-circuito
-  // determinístico já usado acima neste arquivo pros outros casos críticos.
-  const pedidoConfirmadoAgora = evidencias.find(
-    (e) =>
-      e.toolNome === "criar_pedido" &&
-      e.output &&
-      typeof e.output === "object" &&
-      (e.output as Record<string, unknown>).pedido_criado === true,
-  );
-  if (pedidoConfirmadoAgora) {
-    const resumo = pedidoConfirmadoAgora.output as unknown as ResumoPedidoConfirmado;
-    const texto = mensagemDePedidoConfirmado(resumo, params.usaEmoji);
-    await registrarDecisao({
-      ctx,
-      confianca: "alta",
-      cobertura: 0,
-      acao: "responder",
-      relatorio,
-      risco: "alto",
-    });
-    return { acao: "responder", respostaTexto: texto, confianca: "alta" };
-  }
+  // `pedido_id` só vale como evidência quando o pedido foi criado NESTA
+  // rodada ou o checkout ainda está em `pedido_criado` — assim que o cliente
+  // começa um carrinho novo, o ponteiro antigo deixa de sustentar afirmação.
+  const pedidoIdVerificado =
+    transicao.pedidoCriadoAgora?.pedido_id ??
+    (sincronizacao.estado === "pedido_criado" ? sincronizacao.ultimoPedidoCriado?.pedido_id ?? null : null);
+
+  const fatos: FatosVerificados = montarFatosVerificados({
+    estado: sincronizacao.estado,
+    pedido: sincronizacao.pedido,
+    pendencias: sincronizacao.pendencias,
+    pedidoId: pedidoIdVerificado,
+    handoffId: null,
+    falhas: [...transicao.falhas, ...itensResolvidos.falhas, ...roteamento.falhas],
+    dadosNaoAproveitados: transicao.dadosNaoAproveitados,
+    itensResolvidos,
+    assuntosSemResposta: roteamento.assuntosSemResposta,
+    evidencias: evidenciasTotais,
+  });
+  const afirmacoesDoWorkflow = fatosParaAfirmacoes(fatos, evidenciasTotais);
 
   const confianca = computeConfianca(relatorio);
   const decisao = decidir(relatorio, confianca);
   const cobertura = new Set(
-    relatorio.afirmacoes
-      .map((a) => a.fonte_tool)
-      .filter((t): t is string => t !== null),
+    relatorio.afirmacoes.map((a) => a.fonte_tool).filter((t): t is string => t !== null),
   ).size;
 
   await registrarDecisao({
@@ -431,12 +504,15 @@ export async function processarMensagem(
     cobertura,
     acao: decisao.acao,
     relatorio,
-    risco: calcularRiscoMaximo(evidencias),
+    risco: calcularRiscoMaximo(evidenciasTotais),
   });
 
-  if (decisao.acao === "handoff") {
+  // Handoff por confiança baixa nunca acontece com fato verificado na mão —
+  // seria abandonar o cliente tendo o que dizer.
+  const temFatoDoWorkflow = afirmacoesDoWorkflow.length > 0;
+  const acaoFinal: AcaoDecidida = decisao.acao === "handoff" && temFatoDoWorkflow ? "responder" : decisao.acao;
 
-
+  if (acaoFinal === "handoff") {
     await criarHandoff(ctx.empresaId, {
       atendimento_id: ctx.atendimentoId,
       origem: "falha_conhecimento",
@@ -448,49 +524,143 @@ export async function processarMensagem(
     return { acao: "handoff", respostaTexto: null, confianca };
   }
 
-  // Nunca repassa uma afirmação sem fonte real verificada como se fosse
-  // fato — antes só os tipos comerciais eram vetados (via confiança
-  // baixa); `politica`/`generico` sem `fonte_tool_execucao_id` passavam
-  // direto pro Atendente como se tivessem sido confirmadas (CLAUDE.md
-  // regra 1). As afirmações sintéticas de resultado vazio (ver
-  // investigador.ts) sempre têm fonte real, então continuam passando.
-  const afirmacoesVerificadas = relatorio.afirmacoes.filter((a) => a.fonte_tool_execucao_id !== null);
+  // ================= 7. REDIGIR (LLM) =================
+  const afirmacoesVerificadas: Afirmacao[] = [
+    ...afirmacoesDoWorkflow,
+    ...relatorio.afirmacoes.filter((a) => a.fonte_tool_execucao_id !== null),
+  ];
 
-  const textoGerado = await redigir({
+  const opcoesDeRedacao = {
     pergunta,
     historico,
     afirmacoes: afirmacoesVerificadas,
-    acao: decisao.acao,
+    acao: acaoFinal as Extract<AcaoDecidida, "responder" | "pedir_esclarecimento">,
     opcoesEsclarecimento: relatorio.ambiguidade.opcoes,
     tomDeVoz: params.tomDeVoz,
     usaEmoji: params.usaEmoji,
     comportamento: params.comportamento,
     primeiraMensagem: historico.length === 0,
-  });
-  // Rede de segurança determinística: prompt sozinho não garante que o
-  // Atendente nunca use Markdown — ver agent/sanitizacao.ts.
-  const texto = sanitizarFormatacaoWhatsapp(textoGerado);
+  };
 
-  // Roda pra QUALQUER ação que gere texto pro cliente (responder E
-  // pedir_esclarecimento) — o episódio real que motivou estas duas
-  // checagens (IA oferecendo "cardápio em PDF", que não existe) aconteceu
-  // justamente num pedir_esclarecimento, que antes ficava de fora dessa
-  // verificação. Nunca confia só no prompt (CLAUDE.md regra 1).
-  const valorNaoVerificado = contemValorNaoVerificado(texto, evidencias);
-  const produtoNaoVerificado = contemProdutoNaoVerificado(texto, evidencias);
+  const redigirCom = async (instrucao: string | null) =>
+    sanitizarFormatacaoWhatsapp(await redigir({ ...opcoesDeRedacao, instrucaoDeCorrecao: instrucao }));
+
+  let texto = await redigirCom(null);
+
+  // ================= 8. GATE DE LASTRO =================
+  // Camada A (transacional): regex determinística + classificador semântico
+  // na janela de risco — pedido, handoff e cancelamento.
+  const veredictoTransacional = await avaliarRespostaTransacional({ texto, fatos });
+  if (!veredictoTransacional.aprovado) {
+    await registrarInvariante(ctx, "transactional_claim_without_evidence", {
+      motivo: veredictoTransacional.motivo,
+      detectado_por: veredictoTransacional.detectadoPor,
+      estado: fatos.estado_checkout,
+      texto_descartado: texto,
+    });
+    texto = await redigirCom(instrucaoDeCorrecao(fatos, veredictoTransacional.motivo!));
+
+    const segundo = await avaliarRespostaTransacional({ texto, fatos });
+    if (!segundo.aprovado) {
+      await registrarInvariante(ctx, "transactional_claim_without_evidence", {
+        motivo: segundo.motivo,
+        estado: fatos.estado_checkout,
+        texto_descartado: texto,
+        segunda_tentativa: true,
+      });
+      return {
+        acao: "responder",
+        respostaTexto: mensagemDeterministicaDeFallback(fatos, params.usaEmoji),
+        confianca: "alta",
+      };
+    }
+  }
+
+  // Camada B (lastro): toda afirmação SOBRE O NEGÓCIO precisa estar ancorada
+  // num fato desta rodada. É o que fecha a classe inteira de invenção — não
+  // só as frases que alguma regex previu.
+  const fatosDoLastro = fatosParaLastro(fatos, afirmacoesVerificadas);
+  const lastro = await verificarLastro({ texto, fatos: fatosDoLastro });
+  if (!lastro.aprovado) {
+    const contradiz = lastro.semLastro.some((a) => a.motivo === "contradiz_evidencia");
+    await registrarInvariante(ctx, contradiz ? "claim_contradicts_evidence" : "business_claim_without_evidence", {
+      frases: lastro.semLastro.map((a) => a.frase),
+      estado: fatos.estado_checkout,
+      texto_descartado: texto,
+    });
+
+    texto = await redigirCom(instrucaoDeCorrecaoDeLastro(lastro));
+
+    const segundoLastro = await verificarLastro({ texto, fatos: fatosDoLastro });
+    if (!segundoLastro.aprovado) {
+      await registrarInvariante(
+        ctx,
+        segundoLastro.semLastro.some((a) => a.motivo === "contradiz_evidencia")
+          ? "claim_contradicts_evidence"
+          : "business_claim_without_evidence",
+        {
+          frases: segundoLastro.semLastro.map((a) => a.frase),
+          estado: fatos.estado_checkout,
+          texto_descartado: texto,
+          segunda_tentativa: true,
+        },
+      );
+      return {
+        acao: "responder",
+        respostaTexto: mensagemDeterministicaDeFallback(fatos, params.usaEmoji),
+        confianca: "alta",
+      };
+    }
+
+    // O texto que saiu da regeneração de lastro precisa passar de novo pela
+    // camada transacional: consertar o lastro pode introduzir uma afirmação
+    // de pedido/handoff que a primeira passada não tinha. Aqui não há nova
+    // regeneração — já foram duas — então a reprovação cai direto no texto
+    // determinístico.
+    const transacionalDepoisDoLastro = await avaliarRespostaTransacional({ texto, fatos });
+    if (!transacionalDepoisDoLastro.aprovado) {
+      await registrarInvariante(ctx, "transactional_claim_without_evidence", {
+        motivo: transacionalDepoisDoLastro.motivo,
+        estado: fatos.estado_checkout,
+        texto_descartado: texto,
+        apos_regeneracao_de_lastro: true,
+      });
+      return {
+        acao: "responder",
+        respostaTexto: mensagemDeterministicaDeFallback(fatos, params.usaEmoji),
+        confianca: "alta",
+      };
+    }
+  }
+
+  // Verificações específicas que continuam valendo (valor monetário, nome de
+  // produto em negrito, promessa de capacidade inexistente, pedido de código).
+  const valorNaoVerificado = contemValorNaoVerificado(texto, evidenciasTotais);
+  const produtoNaoVerificado = contemProdutoNaoVerificado(texto, evidenciasTotais);
   const promessaNaoSuportada = contemPromessaNaoSuportada(texto);
   const pedeCodigo = pedeCodigoDePedido(texto);
-  const confirmacaoNaoVerificada = contemConfirmacaoDePedidoNaoVerificada(texto, evidencias);
-  if (valorNaoVerificado || produtoNaoVerificado || promessaNaoSuportada || pedeCodigo || confirmacaoNaoVerificada) {
+  if (valorNaoVerificado || produtoNaoVerificado || promessaNaoSuportada || pedeCodigo) {
     const causa = valorNaoVerificado
       ? "continha um valor monetário não presente na evidência real coletada"
       : produtoNaoVerificado
         ? "citava em negrito um nome de produto que não bate com nenhum resultado real de busca no cardápio"
         : promessaNaoSuportada
           ? "prometia um formato/canal (PDF, arquivo, imagem, link) que o sistema não suporta"
-          : pedeCodigo
-            ? "pedia um número/código de pedido ao cliente, algo que o sistema resolve sozinho e o cliente não tem como fornecer"
-            : "afirmava que o pedido foi confirmado/criado sem nenhuma chamada real de \"criar_pedido\" bem-sucedida nesta rodada";
+          : "pedia um número/código de pedido ao cliente, algo que o sistema resolve sozinho e o cliente não tem como fornecer";
+
+    if (temFatoDoWorkflow) {
+      await registrarInvariante(ctx, "business_claim_without_evidence", {
+        motivo: "verificacao_anti_alucinacao",
+        causa,
+        texto_descartado: texto,
+      });
+      return {
+        acao: "responder",
+        respostaTexto: mensagemDeterministicaDeFallback(fatos, params.usaEmoji),
+        confianca: "alta",
+      };
+    }
+
     await criarHandoff(
       ctx.empresaId,
       {
@@ -506,5 +676,5 @@ export async function processarMensagem(
     return { acao: "handoff", respostaTexto: null, confianca: "baixa" };
   }
 
-  return { acao: decisao.acao, respostaTexto: texto, confianca };
+  return { acao: acaoFinal, respostaTexto: texto, confianca };
 }

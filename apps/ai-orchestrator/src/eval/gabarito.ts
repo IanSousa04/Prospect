@@ -7,14 +7,18 @@
 import "dotenv/config";
 import { env } from "../lib/env.js";
 import { CASOS_DETERMINISTICOS } from "./deterministicos.js";
+import { CASOS_CHECKOUT } from "./checkout-deterministicos.js";
+import { CASOS_PIPELINE } from "./pipeline-deterministicos.js";
 import { montarCasosE2E, rodarCasoE2E } from "./casos-e2e.js";
+import { montarCasosE2ECheckout, rodarCasoE2EMultiTurno } from "./casos-e2e-checkout.js";
 
 async function main(): Promise<void> {
   let falhas = 0;
 
   console.log("== Casos determinísticos (código, sem LLM) ==");
-  for (const caso of CASOS_DETERMINISTICOS) {
-    const motivo = caso.rodar();
+  const casosDeterministicos = [...CASOS_DETERMINISTICOS, ...CASOS_CHECKOUT, ...CASOS_PIPELINE];
+  for (const caso of casosDeterministicos) {
+    const motivo = await caso.rodar();
     if (motivo) {
       falhas++;
       console.log(`✗ ${caso.nome}\n    ${motivo}`);
@@ -40,7 +44,24 @@ async function main(): Promise<void> {
     }
   }
 
-  const total = CASOS_DETERMINISTICOS.length + casosE2E.length;
+  console.log("\n== Casos de checkout ponta a ponta (multi-turno roteirizado) ==");
+  const casosCheckout = await montarCasosE2ECheckout(env.empresaId);
+  for (const caso of casosCheckout) {
+    try {
+      const resultado = await rodarCasoE2EMultiTurno(caso);
+      if (resultado.ok) {
+        console.log(`✓ ${caso.nome}`);
+      } else {
+        falhas++;
+        console.log(`✗ ${caso.nome}\n    ${resultado.motivo}`);
+      }
+    } catch (erro) {
+      falhas++;
+      console.log(`✗ ${caso.nome}\n    erro ao rodar: ${erro instanceof Error ? erro.message : erro}`);
+    }
+  }
+
+  const total = casosDeterministicos.length + casosE2E.length + casosCheckout.length;
   console.log(`\n${total - falhas}/${total} casos passaram.`);
   if (falhas > 0) {
     process.exitCode = 1;

@@ -126,8 +126,22 @@ export function pedeCodigoDePedido(textoFinal: string): boolean {
  * acontecido. Mesmo padrão das outras checagens desta lista: regex
  * determinística, nunca confiança na palavra do modelo.
  */
-const REGEX_CONFIRMACAO_DE_PEDIDO =
-  /pedido\b[^.!?\n]{0,40}\b(confirmado|criado|realizado|registrado|enviado)\b|\b(confirmado|recebemos|registramos)\b[^.!?\n]{0,20}\bpedido\b|pedido\b[^.!?\n]{0,30}\b(cozinha|prepara[çc][ãa]o)\b|est[áa]\s+(?:sendo\s+)?prepara(?:do|ndo)\b|\ba\s+caminho\b/i;
+const PADROES_CONFIRMACAO_DE_PEDIDO: RegExp[] = [
+  /pedido\b[^.!?\n]{0,40}\b(confirmado|criado|realizado|registrado|enviado|encaminhado|fechado|finalizado)\b/i,
+  /\b(confirmado|recebemos|registramos|fechamos|finalizamos)\b[^.!?\n]{0,20}\bpedido\b/i,
+  /pedido\b[^.!?\n]{0,30}\b(cozinha|prepara[çc][ãa]o|produ[çc][ãa]o)\b/i,
+  /est[áa]\s+(?:sendo\s+)?prepara(?:do|ndo)\b/i,
+  /\ba\s+caminho\b/i,
+  // Linguagem natural de "já aconteceu" (tarefa 0081, item 11): a lista
+  // fechada anterior só cobria o vocabulário formal ("pedido confirmado"),
+  // e um atendente escreve muito mais parecido com "já tá com a gente".
+  // Continua sendo a SEGUNDA barreira — a primeira é o estado real
+  // (agent/checkout/truth-gate.ts), que não depende de prever frases.
+  /\bj[áa]\s+(est[áa]|t[áa])\s+(com\s+a\s+gente|conosco|na\s+cozinha|indo|saindo|a\s+caminho|tudo\s+certo|confirmad[oa]|pronto)/i,
+  /\bj[áa]\s+(mandei|mandamos|enviei|enviamos|encaminhei|encaminhamos|deixei|deixamos)\b[^.!?\n]{0,30}\b(pedido|cozinha|prepar|entrega)/i,
+  /^\s*j[áa]\s+foi[^A-Za-zÀ-ú0-9]*$/i,
+  /pode\s+deixar\s+que\s+(j[áa]\s+)?(est[áa]|t[áa])\s+(confirmad|pront|tudo\s+cert)/i,
+];
 
 /**
  * Só considera frases AFIRMATIVAS ("seu pedido já está confirmado") —
@@ -136,7 +150,7 @@ const REGEX_CONFIRMACAO_DE_PEDIDO =
  * (ver regra 11 do prompt do Investigador). Separa o texto em frases pelos
  * terminadores usuais e descarta qualquer uma que termine em "?".
  */
-function frasesAfirmativas(textoFinal: string): string[] {
+export function frasesAfirmativas(textoFinal: string): string[] {
   return textoFinal
     .split(/(?<=[.!?\n])/)
     .map((f) => f.trim())
@@ -146,8 +160,73 @@ function frasesAfirmativas(textoFinal: string): string[] {
 /** Só a parte de detecção de texto (sem checar evidência) — reaproveitada
  * pelo gabarito de personas (eval/personas/cenarios.ts) pra saber quando
  * vale a pena ir conferir no banco real se um pedido de fato foi criado. */
+/**
+ * Marcadores de negação — sem isto, a frase LEGÍTIMA "seu pedido ainda não
+ * foi fechado" casava com o padrão "pedido ... fechado" e era descartada
+ * como alucinação (achado no gabarito da tarefa 0081). Dizer o que NÃO
+ * aconteceu é exatamente o comportamento correto quando não há pedido.
+ *
+ * A janela olha o trecho casado mais ~20 caracteres antes dele, não a frase
+ * inteira: assim "seu pedido foi confirmado, não se preocupe" continua sendo
+ * tratado como afirmação (a negação está depois da alegação, sobre outra
+ * coisa). Um eventual escape aqui ainda cai no classificador semântico do
+ * TransactionTruthGate, que roda justamente quando a regex não acusa nada.
+ */
+const REGEX_NEGACAO = /\b(n[ãa]o|nunca|jamais|nenhum)\b/i;
+
+function alegacaoNegada(frase: string, padrao: RegExp): boolean {
+  const encontrado = new RegExp(padrao.source, padrao.flags.replace("g", "")).exec(frase);
+  if (!encontrado) return false;
+  const contexto = frase.slice(Math.max(0, encontrado.index - 20), encontrado.index + encontrado[0].length);
+  return REGEX_NEGACAO.test(contexto);
+}
+
 export function afirmaPedidoConfirmado(textoFinal: string): boolean {
-  return frasesAfirmativas(textoFinal).some((frase) => REGEX_CONFIRMACAO_DE_PEDIDO.test(frase));
+  return frasesAfirmativas(textoFinal).some((frase) =>
+    PADROES_CONFIRMACAO_DE_PEDIDO.some((padrao) => padrao.test(frase) && !alegacaoNegada(frase, padrao)),
+  );
+}
+
+/**
+ * Mesma ideia, pro handoff (tarefa 0081, item 14): o texto não pode dizer
+ * que um humano foi acionado sem que exista um `handoff_id` real. Sem isto,
+ * "já avisei a equipe" é só uma frase — ninguém foi avisado de verdade e o
+ * cliente fica esperando um retorno que nunca vai vir.
+ */
+const PADROES_HANDOFF_REALIZADO: RegExp[] = [
+  /\b(j[áa]\s+)?(chamei|chamamos|acionei|acionamos|avisei|avisamos|notifiquei|notificamos)\b[^.!?\n]{0,30}\b(atendente|humano|equipe|respons[áa]vel|gerente)/i,
+  /\b(j[áa]\s+)?transferi\b[^.!?\n]{0,30}\b(atendente|humano|pessoa|equipe)/i,
+  /\bpassei\s+(seu\s+)?(atendimento|caso)\b/i,
+  /\b(um|uma)\s+(atendente|pessoa|colega)\b[^.!?\n]{0,30}\b(vai|j[áa])\s+(te\s+)?(retornar|responder|assumir|falar|chamar)/i,
+];
+
+/**
+ * Afirmação de cancelamento (tarefa 0081, item 18). Diferente das outras
+ * duas, esta não tem "evidência que a tornaria verdadeira": a IA não tem
+ * nenhuma ferramenta de cancelamento (`cancelar_pedido` é a tarefa 0058,
+ * ainda não implementada), então dizer que cancelou é sempre falso. O
+ * caminho correto é handoff estruturado — ver `quer_cancelar` em
+ * agent/orquestrador.ts.
+ *
+ * Deliberadamente NÃO casa a pergunta ("quer que eu cancele?") nem a recusa
+ * ("não consigo cancelar por aqui"), que são as respostas honestas.
+ */
+const PADROES_CANCELAMENTO_REALIZADO: RegExp[] = [
+  /\b(cancelei|cancelamos)\b/i,
+  /\bpedido\b[^.!?\n]{0,30}\b(cancelado|foi\s+cancelado)\b/i,
+  /\b(j[áa]\s+)?(est[áa]|foi)\s+cancelad[oa]\b/i,
+];
+
+export function afirmaCancelamentoRealizado(textoFinal: string): boolean {
+  return frasesAfirmativas(textoFinal).some((frase) =>
+    PADROES_CANCELAMENTO_REALIZADO.some((padrao) => padrao.test(frase) && !alegacaoNegada(frase, padrao)),
+  );
+}
+
+export function afirmaHandoffRealizado(textoFinal: string): boolean {
+  return frasesAfirmativas(textoFinal).some((frase) =>
+    PADROES_HANDOFF_REALIZADO.some((padrao) => padrao.test(frase) && !alegacaoNegada(frase, padrao)),
+  );
 }
 
 export function contemConfirmacaoDePedidoNaoVerificada(textoFinal: string, evidencias: EvidenciaColetada[]): boolean {
@@ -188,7 +267,11 @@ function nomesReaisDeProduto(evidencias: EvidenciaColetada[]): Set<string> {
 const REGEX_NEGRITO = /\*([^*\n]+)\*/g;
 
 /** Palavras de ênfase comuns que nunca são nome de produto, mesmo em
- * negrito — episódio real: com o carrinho em uso, `nomesConhecidos` deixou
+ * negrito. A lista cresceu na tarefa 0081 com o vocabulário de checkout
+ * (entrega/retirada/pix/cartão/dinheiro...): o gabarito ponta a ponta
+ * flagrou a resposta legítima "você quer *entrega* ou *retirada*?" sendo
+ * descartada inteira porque "retirada" não batia com nenhum nome de
+ * produto do cardápio. Episódio anterior: com o carrinho em uso, `nomesConhecidos` deixou
  * de ficar vazio na maioria das conversas (toda tool de carrinho retorna
  * nome de item real), então a rede de segurança de `nomesConhecidos.size
  * === 0` (só protege contra negrito de ênfase quando NENHUM produto foi
@@ -212,8 +295,17 @@ const PALAVRAS_ENFASE_NAO_PRODUTO = new Set([
   "desconto",
   "promoção",
   "entrega",
+  "retirada",
   "pagamento",
   "endereço",
+  "dinheiro",
+  "pix",
+  "cartão",
+  "crédito",
+  "débito",
+  "resumo",
+  "valor",
+  "taxa",
 ]);
 
 /**

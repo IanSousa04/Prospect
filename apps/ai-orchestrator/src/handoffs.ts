@@ -52,12 +52,20 @@ export async function criarHandoff(
    * quando o motivo do handoff é a verificação anti-alucinação reprovando
    * o texto. */
   respostaDescartadaParaTeste?: string | null,
-): Promise<void> {
+): Promise<string> {
   const validado = CriarHandoffSchema.parse(input);
 
-  const { error } = await supabaseAdmin.from("handoffs").insert({ ...validado, empresa_id: empresaId });
-  if (error) {
-    throw new Error(`erro_ao_criar_handoff: ${error.message}`);
+  // Devolve o id real da linha criada (tarefa 0081, item 14): sem essa
+  // evidência, "já avisei um atendente" seria só uma frase — nada provaria
+  // que alguém foi de fato acionado. É o `handoff_id` que o
+  // TransactionTruthGate exige antes de deixar o texto afirmar isso.
+  const { data, error } = await supabaseAdmin
+    .from("handoffs")
+    .insert({ ...validado, empresa_id: empresaId })
+    .select("id")
+    .single();
+  if (error || !data) {
+    throw new Error(`erro_ao_criar_handoff: ${error?.message ?? "sem id retornado"}`);
   }
 
   const novoStatus = validado.origem === "cliente_solicitou" ? "cliente_solicitou_humano" : "ia_solicitou_humano";
@@ -80,4 +88,6 @@ export async function criarHandoff(
       metadata_json: {},
     });
   }
+
+  return data.id as string;
 }

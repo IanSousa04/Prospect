@@ -6,8 +6,11 @@ import {
   salvarPedidoEmConstrucao,
   carregarConfirmacaoPendente,
   salvarConfirmacaoPendente,
+  carregarUltimoPedidoCriado,
+  salvarUltimoPedidoCriado,
 } from "../agent/sessao.js";
-import { calcularSubtotal, informacoesPendentes, pedidoVazio, calcularHashConfirmacao } from "../agent/pedido-contexto.js";
+import { calcularSubtotal, pedidoVazio, calcularHashConfirmacao } from "../agent/pedido-contexto.js";
+import { validarPreRequisitosDeCriacao } from "../agent/checkout/validacao-criacao.js";
 
 interface PedidoIdInput {
   pedido_id?: string;
@@ -104,33 +107,34 @@ registerTool({
 registerTool({
   nome: "criar_pedido",
   descricao:
-    "Confirma e cria de verdade o pedido a partir do carrinho desta conversa. AÇÃO IRREVERSÍVEL COM IMPACTO FINANCEIRO REAL (CLAUDE.md regra 6) — só chame depois que o cliente confirmar explicitamente o resumo final (ex.: 'pode confirmar', 'é isso mesmo', 'fechar assim'). 'Quero mais um X' ou qualquer pedido de item NUNCA é confirmação — isso é adicionar_ao_carrinho, não criar_pedido. Nunca chame se a mensagem do cliente for ambígua sobre o que está confirmando.",
+    "Confirma e cria de verdade o pedido a partir do carrinho desta conversa. AÇÃO IRREVERSÍVEL COM IMPACTO FINANCEIRO REAL (CLAUDE.md regra 6). SOMENTE WORKFLOW (tarefa 0081): só agent/checkout/transicoes.ts pode chamar, depois de validar deterministicamente a confirmação do cliente — nunca é oferecida ao LLM.",
   parametrosJsonSchema: { type: "object", properties: {} },
   risco: "alto",
+  somenteWorkflow: true,
   executor: async (_input: unknown, ctx: ToolContext) => {
-    const pedido = await carregarPedidoEmConstrucao(ctx);
-    const pendencias = informacoesPendentes(pedido, ctx.fluxoPedido);
+    const [pedido, confirmacaoPendente, ultimoPedidoCriado] = await Promise.all([
+      carregarPedidoEmConstrucao(ctx),
+      carregarConfirmacaoPendente(ctx),
+      carregarUltimoPedidoCriado(ctx),
+    ]);
 
-    // Só a confirmação final pode faltar — carrinho, entrega e pagamento
-    // já precisam estar todos resolvidos (CLAUDE.md regra 6: nunca
-    // finalizar com informação incompleta).
-    if (pendencias.length !== 1 || pendencias[0] !== "confirmacao_final") {
-      return { erro: "pedido_incompleto", pendencias };
+    // Toda a validação de pré-requisito vive numa função pura (tarefa 0081,
+    // agent/checkout/validacao-criacao.ts) — a mesma regra que o gabarito
+    // determinístico exercita, sem cópia paralela que possa divergir.
+    const validacao = validarPreRequisitosDeCriacao({
+      pedido,
+      confirmacao: confirmacaoPendente,
+      ultimoPedidoCriado,
+      config: ctx.fluxoPedido,
+    });
+
+    if (validacao.situacao === "ja_criado") {
+      return { pedido_criado: true, pedido_id: validacao.pedido_id, idempotente: true };
     }
-
-    // Confirmação estruturada (tarefa 0022) — nunca confia só no
-    // julgamento do LLM de que "o cliente confirmou": exige um registro
-    // determinístico (hash+expiração) criado por "consultar_carrinho"
-    // quando o resumo foi de fato mostrado, ainda válido e batendo com o
-    // carrinho ATUAL (recalculado agora, nunca confiando no hash salvo
-    // sozinho — se o carrinho mudou desde então, o hash não bate mais).
-    const confirmacaoPendente = await carregarConfirmacaoPendente(ctx);
-    const confirmacaoValida =
-      confirmacaoPendente != null &&
-      confirmacaoPendente.hash === calcularHashConfirmacao(pedido) &&
-      new Date(confirmacaoPendente.expiraEm).getTime() > Date.now();
-    if (!confirmacaoValida) {
-      return { erro: "confirmacao_expirada_ou_invalida" };
+    if (validacao.situacao === "recusado") {
+      return validacao.pendencias
+        ? { erro: validacao.motivo, pendencias: validacao.pendencias }
+        : { erro: validacao.motivo };
     }
 
     // Gate de risco real (campos de `ia_permissoes` que existiam desde a
@@ -168,6 +172,15 @@ registerTool({
 
     if (!resultado.ok) return { erro: resultado.erro };
 
+    // Grava a evidência ANTES de resetar o carrinho: se o processo morrer
+    // no meio, é melhor sobrar um ponteiro pra um pedido real do que perder
+    // o registro de que ele existe (é ele que impede uma segunda criação e
+    // que mantém o estado `pedido_criado` depois do reset).
+    await salvarUltimoPedidoCriado(ctx, {
+      pedido_id: resultado.pedido.id,
+      hash: calcularHashConfirmacao(pedido),
+      criado_em: new Date().toISOString(),
+    });
     // Reseta o Order Context desta conversa — o pedido confirmado agora
     // vive em `pedidos`/`itens_pedido` (fonte real, já visível no painel
     // "Pedido" existente); um pedido novo na mesma conversa começa do zero.

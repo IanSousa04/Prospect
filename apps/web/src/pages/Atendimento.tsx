@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type {
   AtendimentoComContexto,
   EnderecoEntrega,
+  EstadoCheckout,
   FormaPagamento,
   InformacaoPendente,
   MensagemComMidia,
@@ -52,11 +53,22 @@ const STATUS_PEDIDO_LABEL: Record<StatusPedido, string> = {
 // exibir de forma legível o que falta no carrinho que a IA está montando.
 const PENDENCIA_LABEL: Record<InformacaoPendente, string> = {
   produtos: "Adicionar produtos",
-  confirmar_carrinho: "Confirmar carrinho",
   tipo_entrega: "Definir tipo de entrega",
   endereco: "Informar endereço",
   forma_pagamento: "Definir forma de pagamento",
   confirmacao_final: "Confirmação final do pedido",
+};
+
+/** Etapa do checkout derivada do mesmo estado que a IA usa
+ * (`derivarEstadoCheckout`, packages/shared) — tarefa 0081, CLAUDE.md
+ * regra 8: o humano enxerga exatamente a etapa em que o workflow está,
+ * nunca um cálculo paralelo da tela. */
+const ESTADO_CHECKOUT_LABEL: Record<EstadoCheckout, string> = {
+  sem_carrinho: "Sem carrinho",
+  montando_carrinho: "Montando carrinho",
+  dados_completos: "Dados completos — resumo ainda não apresentado",
+  aguardando_confirmacao: "Aguardando confirmação do cliente",
+  pedido_criado: "Pedido já criado nesta conversa",
 };
 
 const IconBack = (
@@ -839,9 +851,28 @@ export default function Atendimento() {
                 </select>
               </div>
 
+              <div className="carrinho-pendencias">
+                <div className="ctx-sublabel">Etapa do checkout</div>
+                <div className="tag-pill">{ESTADO_CHECKOUT_LABEL[carrinhoIa.estado_checkout]}</div>
+              </div>
+
+              {carrinhoIa.ultimo_pedido_criado && (
+                <div className="carrinho-pendencias">
+                  <div className="ctx-sublabel">Pedido criado a partir deste carrinho</div>
+                  <div className="tag-pill">
+                    Criado às{" "}
+                    {new Date(carrinhoIa.ultimo_pedido_criado.criado_em).toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
+                    — ver no card "Pedido"
+                  </div>
+                </div>
+              )}
+
               {carrinhoIa.aguardando_confirmacao && (
                 <div className="carrinho-pendencias">
-                  <div className="ctx-sublabel">Confirmação (tarefa 0022)</div>
+                  <div className="ctx-sublabel">Resumo aguardando confirmação</div>
                   <div className="tag-pill tag-pill-pendencia">
                     Aguardando confirmação do cliente — expira às{" "}
                     {new Date(carrinhoIa.aguardando_confirmacao.expiraEm).toLocaleTimeString("pt-BR", {
