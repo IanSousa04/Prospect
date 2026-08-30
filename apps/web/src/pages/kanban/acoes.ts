@@ -8,6 +8,9 @@ export interface AcaoKanban {
   /** Texto curto do botão no card — a ação é secundária, o pedido é o
    * conteúdo principal. */
   label: string;
+  /** Tooltip do botão: explica em uma frase o que a ação faz. Mais curto que
+   * `confirmacao.descricao`, que só aparece depois do clique. */
+  dica: string;
   destrutivo?: boolean;
   confirmacao: {
     titulo: string;
@@ -22,6 +25,7 @@ export interface AcaoKanban {
 const ATENDER: AcaoKanban = {
   chave: "atender",
   label: "Atender",
+  dica: "Assumir este atendimento e abrir a conversa",
   confirmacao: {
     titulo: "Atender este atendimento?",
     descricao: "Você assumirá este atendimento como responsável.",
@@ -39,6 +43,7 @@ const ATENDER: AcaoKanban = {
 const CONFIRMAR: AcaoKanban = {
   chave: "confirmar",
   label: "Confirmar",
+  dica: "Enviar o pedido para a cozinha",
   confirmacao: {
     titulo: "Enviar pedido para a cozinha?",
     descricao: 'O pedido será confirmado e movido para "Na cozinha".',
@@ -52,6 +57,7 @@ const CONFIRMAR: AcaoKanban = {
 const PRONTO: AcaoKanban = {
   chave: "pronto",
   label: "Pronto",
+  dica: "Marcar o pedido como pronto",
   confirmacao: {
     titulo: "Marcar pedido como pronto?",
     descricao: 'O pedido será movido para "Pronto" e ficará disponível para entrega.',
@@ -65,6 +71,7 @@ const PRONTO: AcaoKanban = {
 const ENTREGAR: AcaoKanban = {
   chave: "entregar",
   label: "Entregar",
+  dica: "Finalizar a entrega e encerrar o atendimento",
   confirmacao: {
     titulo: "Finalizar entrega?",
     descricao:
@@ -79,6 +86,7 @@ const ENTREGAR: AcaoKanban = {
 const CANCELAR: AcaoKanban = {
   chave: "cancelar",
   label: "Cancelar pedido",
+  dica: "Cancelar o pedido",
   destrutivo: true,
   confirmacao: {
     titulo: "Cancelar pedido?",

@@ -158,6 +158,13 @@ export default function Kanban() {
       await acao.executar(atendimento);
       setAcaoPendente(null);
       mostrarToast(acao.toast);
+      // "Atender" é a única ação que pede pra assumir a conversa de fato —
+      // depois de assumir, o operador já deve cair dentro dela, não ficar no
+      // board procurando o card que acabou de mudar de coluna.
+      if (acao.chave === "atender") {
+        navigate(`/atendimentos/${atendimento.id}`);
+        return;
+      }
       await carregar();
     } catch (e) {
       setAcaoPendente(null);

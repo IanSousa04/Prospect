@@ -53,6 +53,29 @@ export function apagarToken(slug: string): void {
   }
 }
 
+/** Telefone digitado na última vez — mesmo escopo por loja do token. É só
+ * conveniência de preenchimento: o cliente não digita o número de novo em
+ * cada visita. Nunca usado como identidade (a sessão é que vale). */
+function chaveTelefone(slug: string): string {
+  return `pedido-publico:telefone:${slug}`;
+}
+
+export function lerTelefone(slug: string): string | null {
+  try {
+    return localStorage.getItem(chaveTelefone(slug));
+  } catch {
+    return null;
+  }
+}
+
+export function salvarTelefone(slug: string, telefone: string): void {
+  try {
+    localStorage.setItem(chaveTelefone(slug), telefone);
+  } catch {
+    /* storage bloqueado — segue sem lembrar */
+  }
+}
+
 /** Erro com o CÓDIGO da API preservado — a UI decide a frase (e algumas
  * decisões dependem do código, não do texto: `carrinho_mudou` reabre a
  * revisão, `sessao_expirada` volta pra tela de telefone). */

@@ -8,9 +8,10 @@ import {
   INTERVALO_REENVIO_SEGUNDOS,
   TAMANHO_CODIGO_VERIFICACAO,
   VALIDADE_CODIGO_MINUTOS,
+  formatarTelefoneBr,
   normalizarTelefoneBr,
 } from "@prospect/shared";
-import { apiPublica, mensagemDeErro } from "./apiPublico.js";
+import { apiPublica, lerTelefone, mensagemDeErro, salvarTelefone } from "./apiPublico.js";
 import { aparenciaClasse, aparenciaVars } from "./aparencia.js";
 
 /** Máscara de digitação. Só apresentação — quem decide se o número é válido é
@@ -34,7 +35,12 @@ export default function Identificacao(props: {
   const { loja, aoAutenticar } = props;
 
   const [etapa, setEtapa] = useState<Etapa>("telefone");
-  const [telefone, setTelefone] = useState("");
+  // Telefone já usado antes nesta loja vem preenchido — conveniência, não
+  // identidade: o valor guardado é só um atalho de digitação.
+  const [telefone, setTelefone] = useState(() => {
+    const salvo = lerTelefone(loja.slug);
+    return salvo ? formatarTelefoneBr(salvo) : "";
+  });
   const [codigo, setCodigo] = useState("");
   const [verificacao, setVerificacao] = useState<VerificacaoSolicitada | null>(
     null,
@@ -100,6 +106,10 @@ export default function Identificacao(props: {
   async function pedirCodigo(e?: React.FormEvent) {
     e?.preventDefault();
     if (!telefoneNormalizado || enviando) return;
+
+    // Guarda já no clique em "Continuar": da próxima visita o campo vem
+    // preenchido, mesmo que o envio abaixo falhe (rede caiu, etc.).
+    salvarTelefone(loja.slug, telefoneNormalizado);
 
     setEnviando(true);
     setErro(null);

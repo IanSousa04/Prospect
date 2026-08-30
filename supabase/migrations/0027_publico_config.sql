@@ -1,4 +1,4 @@
--- Aba "Página pública" — aparência do cardápio público (/p/<slug>): cor de
+-- Aba "Página pública" — aparência do cardápio público (/delivery/<slug>): cor de
 -- destaque, fonte e organização dos produtos. Uma coluna jsonb, mesmo padrão
 -- de `fluxo_pedido_json`/`comportamento_json` (estrutura validada por schema
 -- em packages/shared/src/publico-config.ts).

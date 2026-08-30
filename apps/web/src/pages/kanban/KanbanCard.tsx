@@ -131,6 +131,7 @@ export default function KanbanCard({
               key={acao.chave}
               className={`btn-acao${acao.destrutivo ? " btn-acao-destrutivo" : ""}`}
               disabled={emExecucao}
+              title={acao.dica}
               onClick={() => onAcao(acao)}
             >
               {acao.label}

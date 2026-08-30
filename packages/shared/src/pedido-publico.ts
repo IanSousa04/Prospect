@@ -102,7 +102,7 @@ export function textoMensagemVerificacao(nomeEmpresa: string, codigo: string): s
   return (
     `Seu código para fazer o pedido em *${nomeEmpresa}* é *${codigo}*.\n\n` +
     `Ele vale por ${VALIDADE_CODIGO_MINUTOS} minutos. ` +
-    `Se não foi você que pediu, é só ignorar esta mensagem — ninguém consegue usar o código sem ele.`
+    `Se não foi você que pediu, é só ignorar esta mensagem.`
   );
 }
 

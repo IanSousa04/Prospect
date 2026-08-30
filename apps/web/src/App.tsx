@@ -18,12 +18,12 @@ export default function App() {
   const { session, carregando } = useSession();
 
   // A página pública é resolvida ANTES do gate de sessão do painel: quem
-  // acessa `/p/<loja>` é o cliente final, que nunca vai ter login de painel —
+  // acessa `/delivery/<loja>` é o cliente final, que nunca vai ter login de painel —
   // sem esta rota antes, ele cairia na tela de e-mail e senha do atendente.
   // O `carregando` do painel também não pode segurar esta rota: o cliente não
   // deve esperar uma verificação de sessão que não é dele.
   const rotaPublica = (
-    <Route path="/p/:slug" element={<PedidoPublico />} />
+    <Route path="/delivery/:slug" element={<PedidoPublico />} />
   );
 
   if (carregando) {
