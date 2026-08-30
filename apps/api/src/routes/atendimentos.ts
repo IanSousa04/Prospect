@@ -3,6 +3,7 @@ import type {
   AguardandoConfirmacao,
   AtendimentoComContexto,
   EnderecoEntrega,
+  EstagioOperacional,
   FluxoPedidoConfig,
   FormaPagamento,
   ItemCarrinho,
@@ -24,13 +25,7 @@ import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth } from "../lib/auth.js";
 
-const STATUS_VALIDOS: StatusAtendimento[] = [
-  "ia_atendendo",
-  "ia_solicitou_humano",
-  "cliente_solicitou_humano",
-  "humano_atendendo",
-  "resolvido",
-];
+const STATUS_VALIDOS: StatusAtendimento[] = ["ia_atendendo", "solicitou_humano", "humano_atendendo", "resolvido"];
 
 // Transições permitidas via PATCH genérico — mesmo padrão de
 // `TRANSICOES` em pedidos.ts. `/assumir` e `/devolver-ia` continuam sendo
@@ -38,9 +33,8 @@ const STATUS_VALIDOS: StatusAtendimento[] = [
 // esta rota cobre o resto (ex.: IA escalando pra "solicitou humano",
 // cliente pedindo humano, ou finalizar a partir de qualquer estado ativo).
 const TRANSICOES: Record<StatusAtendimento, StatusAtendimento[]> = {
-  ia_atendendo: ["ia_solicitou_humano", "cliente_solicitou_humano", "humano_atendendo", "resolvido"],
-  ia_solicitou_humano: ["humano_atendendo", "ia_atendendo", "resolvido"],
-  cliente_solicitou_humano: ["humano_atendendo", "ia_atendendo", "resolvido"],
+  ia_atendendo: ["solicitou_humano", "humano_atendendo", "resolvido"],
+  solicitou_humano: ["humano_atendendo", "ia_atendendo", "resolvido"],
   humano_atendendo: ["ia_atendendo", "resolvido"],
   resolvido: [],
 };
@@ -130,12 +124,44 @@ async function salvarPedidoIa(empresaId: string, atendimentoId: string, pedido: 
   );
 }
 
+/** Deriva o estágio do board unificado (tarefa 0066) a partir de
+ * `atendimentos.status` + `pedidos.status`, sem gravar uma terceira fonte
+ * de verdade: se existe pedido não cancelado, o estágio é o status do
+ * pedido; senão, se existe pedido cancelado mais recente, é `cancelado`;
+ * senão, é o próprio status do atendimento (já reduzido pela tarefa 0064). */
+function maisRecente<T extends { criado_em: string }>(itens: T[]): T | null {
+  return itens.reduce<T | null>((mais, atual) => {
+    if (!mais) return atual;
+    return new Date(atual.criado_em) > new Date(mais.criado_em) ? atual : mais;
+  }, null);
+}
+
+function derivarEstagioOperacional(
+  statusAtendimento: StatusAtendimento,
+  pedidoAberto: { status: string } | null,
+  pedidoCanceladoMaisRecente: { status: string } | null,
+): EstagioOperacional {
+  if (pedidoAberto) return pedidoAberto.status as EstagioOperacional;
+  if (pedidoCanceladoMaisRecente) return "cancelado";
+  return statusAtendimento;
+}
+
 function paraContexto(row: any): AtendimentoComContexto {
+  // Pedido arquivado (tarefa 0066) sai da visão ativa do board — nunca vira
+  // `pedido_aberto`/`pedido_estagio` nem participa da derivação do estágio.
+  const pedidosAtivos = (row.pedidos ?? []).filter((p: any) => !p.arquivado_em);
+  const handoff_aberto = (row.handoffs ?? []).find((h: any) => h.status === "aberto") ?? null;
+  const pedido_aberto = pedidosAtivos.find((p: any) => p.status !== "cancelado") ?? null;
+  const pedidoCanceladoMaisRecente = pedido_aberto
+    ? null
+    : maisRecente<{ status: string; criado_em: string }>(pedidosAtivos.filter((p: any) => p.status === "cancelado"));
   return {
     ...row,
     cliente: row.cliente,
-    handoff_aberto: (row.handoffs ?? []).find((h: any) => h.status === "aberto") ?? null,
-    pedido_aberto: (row.pedidos ?? []).find((p: any) => p.status !== "cancelado") ?? null,
+    handoff_aberto,
+    pedido_aberto,
+    pedido_estagio: pedido_aberto ?? pedidoCanceladoMaisRecente,
+    estagio_operacional: derivarEstagioOperacional(row.status, pedido_aberto, pedidoCanceladoMaisRecente),
   };
 }
 
@@ -163,7 +189,13 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(500).send({ error: "erro_ao_buscar_atendimentos" });
     }
 
-    const atendimentos: AtendimentoComContexto[] = (data ?? []).map(paraContexto);
+    // Um atendimento `resolvido` sem nenhum pedido (nunca virou venda)
+    // desaparece do board sozinho, sem ação manual (ver tasks/0066) — os
+    // demais casos de "sair da visão ativa" (pedido entregue/cancelado)
+    // passam por arquivamento explícito (`POST /pedidos/:id/arquivar`).
+    const atendimentos: AtendimentoComContexto[] = (data ?? [])
+      .map(paraContexto)
+      .filter((a) => a.estagio_operacional !== "resolvido");
 
     return atendimentos;
   });

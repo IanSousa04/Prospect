@@ -38,10 +38,9 @@ export async function handoffsRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(500).send({ error: "erro_ao_criar_handoff" });
     }
 
-    const novoStatusAtendimento = body.origem === "cliente_solicitou" ? "cliente_solicitou_humano" : "ia_solicitou_humano";
     await supabaseAdmin
       .from("atendimentos")
-      .update({ status: novoStatusAtendimento })
+      .update({ status: "solicitou_humano" })
       .eq("id", body.atendimento_id)
       .eq("empresa_id", empresaId);
 

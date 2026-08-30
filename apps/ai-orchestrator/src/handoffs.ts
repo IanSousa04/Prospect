@@ -68,10 +68,9 @@ export async function criarHandoff(
     throw new Error(`erro_ao_criar_handoff: ${error?.message ?? "sem id retornado"}`);
   }
 
-  const novoStatus = validado.origem === "cliente_solicitou" ? "cliente_solicitou_humano" : "ia_solicitou_humano";
   await supabaseAdmin
     .from("atendimentos")
-    .update({ status: novoStatus })
+    .update({ status: "solicitou_humano" })
     .eq("id", validado.atendimento_id)
     .eq("empresa_id", empresaId);
 

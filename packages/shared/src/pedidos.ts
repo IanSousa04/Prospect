@@ -1,14 +1,7 @@
 // Tipos espelham 1:1 o schema de supabase/migrations/0008_fase3_pedidos.sql.
 // Qualquer mudança de schema deve atualizar este arquivo na mesma alteração.
 
-export type StatusPedido =
-  | "aberto"
-  | "confirmado"
-  | "em_preparo"
-  | "pronto"
-  | "saiu_para_entrega"
-  | "entregue"
-  | "cancelado";
+export type StatusPedido = "aberto" | "em_preparacao" | "pronto" | "entregue" | "cancelado";
 
 export type OrigemPedido = "painel" | "ia" | "integracao_externa";
 
@@ -51,6 +44,10 @@ export interface Pedido {
 
   observacoes: string | null;
 
+  /** Preenchido quando um humano arquiva um pedido `entregue`/`cancelado`
+   * pra sair da visão ativa do board (tarefa 0066) — não afeta `status`. */
+  arquivado_em: string | null;
+
   criado_em: string;
   atualizado_em: string;
 }
@@ -86,10 +83,4 @@ export interface PedidoDetalhado extends Pedido {
 
 /** Estados que ainda podem ser alterados pelo humano no painel — pedidos
  * entregues/cancelados são somente leitura (ver docs/product/08-roadmap.md). */
-export const STATUS_PEDIDO_EDITAVEIS: StatusPedido[] = [
-  "aberto",
-  "confirmado",
-  "em_preparo",
-  "pronto",
-  "saiu_para_entrega",
-];
+export const STATUS_PEDIDO_EDITAVEIS: StatusPedido[] = ["aberto", "em_preparacao", "pronto"];

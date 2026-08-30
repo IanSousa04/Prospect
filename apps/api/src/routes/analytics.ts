@@ -8,7 +8,7 @@ const DIAS_PARA_REATIVAR = 30;
 /** Estados de pedido que representam uma venda de fato confirmada — usados
  * pra taxa de conversão e faturamento. "aberto" ainda é só um carrinho em
  * montagem, não uma venda (ver docs/product/06-qualidade-analytics.md §6.3). */
-const STATUS_CONVERTIDO = ["confirmado", "em_preparo", "pronto", "saiu_para_entrega", "entregue"];
+const STATUS_CONVERTIDO = ["em_preparacao", "pronto", "entregue"];
 
 export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", requireAuth);

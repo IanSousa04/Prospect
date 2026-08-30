@@ -1,4 +1,4 @@
-import type { StatusAtendimento } from "@prospect/shared";
+import type { EstagioOperacional } from "@prospect/shared";
 
 export interface StatusMeta {
   label: string;
@@ -51,27 +51,57 @@ const IconCheck = (
   </svg>
 );
 
-/** Única fonte de verdade de cor/ícone/label por status — usada no Kanban e
- * na tela de atendimento, pra garantir que o mesmo status pareça igual em
- * todo lugar (ver docs/product/07-ux-multitenant-fluxos.md §7.1). */
-export const STATUS_META: Record<StatusAtendimento, StatusMeta> = {
+const IconClock = (
+  <svg {...iconProps}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 3" />
+  </svg>
+);
+
+const IconFlame = (
+  <svg {...iconProps}>
+    <path d="M12 2c1 3-2 4-2 7a4 4 0 0 0 8 0c0-1-.5-2-1-2 .5 2-1 3-2 3-2 0-2-2-1-4 .5-1 0-3-2-4z" />
+  </svg>
+);
+
+const IconBag = (
+  <svg {...iconProps}>
+    <path d="M6 8h12l-1 12H7L6 8z" />
+    <path d="M9 8V6a3 3 0 0 1 6 0v2" />
+  </svg>
+);
+
+const IconTruck = (
+  <svg {...iconProps}>
+    <rect x="1" y="7" width="13" height="10" rx="1" />
+    <path d="M14 10h4l3 3v4h-7z" />
+    <circle cx="6" cy="19" r="1.5" />
+    <circle cx="17" cy="19" r="1.5" />
+  </svg>
+);
+
+const IconX = (
+  <svg {...iconProps}>
+    <path d="M18 6L6 18M6 6l12 12" />
+  </svg>
+);
+
+/** Única fonte de verdade de cor/ícone/label por estágio do board unificado
+ * (tarefa 0067) — usada no Kanban e na tela de atendimento, pra garantir
+ * que o mesmo estágio pareça igual em todo lugar (ver
+ * docs/product/07-ux-multitenant-fluxos.md §7.1). */
+export const STATUS_META: Record<EstagioOperacional, StatusMeta> = {
   ia_atendendo: {
     label: "IA atendendo",
     accentVar: "var(--ia)",
     accentBgVar: "var(--ia-bg)",
     icon: IconIA,
   },
-  ia_solicitou_humano: {
-    label: "IA solicitou humano",
+  solicitou_humano: {
+    label: "Solicitou humano",
     accentVar: "var(--amber)",
     accentBgVar: "var(--amber-bg)",
     icon: IconAlert,
-  },
-  cliente_solicitou_humano: {
-    label: "Cliente solicitou humano",
-    accentVar: "var(--red)",
-    accentBgVar: "var(--red-bg)",
-    icon: IconUserAlert,
   },
   humano_atendendo: {
     label: "Humano atendendo",
@@ -79,20 +109,56 @@ export const STATUS_META: Record<StatusAtendimento, StatusMeta> = {
     accentBgVar: "var(--blue-bg)",
     icon: IconHeadset,
   },
+  // Nunca aparece como coluna do Kanban (ver KANBAN_COLUNAS) — só existe
+  // aqui pra `STATUS_META` cobrir o tipo inteiro de `EstagioOperacional`,
+  // usado se algum lugar exibir um atendimento resolvido individualmente.
   resolvido: {
     label: "Resolvido",
     accentVar: "var(--gray)",
     accentBgVar: "var(--gray-bg)",
     icon: IconCheck,
   },
+  aberto: {
+    label: "Aberto",
+    accentVar: "var(--gray)",
+    accentBgVar: "var(--gray-bg)",
+    icon: IconClock,
+  },
+  em_preparacao: {
+    label: "Em preparação",
+    accentVar: "var(--amber)",
+    accentBgVar: "var(--amber-bg)",
+    icon: IconFlame,
+  },
+  pronto: {
+    label: "Pronto",
+    accentVar: "var(--blue)",
+    accentBgVar: "var(--blue-bg)",
+    icon: IconBag,
+  },
+  entregue: {
+    label: "Entregue",
+    accentVar: "var(--green, var(--blue))",
+    accentBgVar: "var(--green-bg, var(--blue-bg))",
+    icon: IconTruck,
+  },
+  cancelado: {
+    label: "Cancelado",
+    accentVar: "var(--red)",
+    accentBgVar: "var(--red-bg)",
+    icon: IconX,
+  },
 };
 
-export const KANBAN_COLUNAS: StatusAtendimento[] = [
+export const KANBAN_COLUNAS: EstagioOperacional[] = [
   "ia_atendendo",
-  "ia_solicitou_humano",
-  "cliente_solicitou_humano",
+  "solicitou_humano",
   "humano_atendendo",
-  "resolvido",
+  "aberto",
+  "em_preparacao",
+  "pronto",
+  "entregue",
+  "cancelado",
 ];
 
 export function tempoDecorrido(iso: string): string {

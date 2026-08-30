@@ -130,8 +130,7 @@ export interface IaPermissao {
 /** Estados conceituais do Kanban — ver docs/product/03-atendimento-e-crm.md §3.2. */
 export type StatusAtendimento =
   | "ia_atendendo"
-  | "ia_solicitou_humano"
-  | "cliente_solicitou_humano"
+  | "solicitou_humano"
   | "humano_atendendo"
   | "resolvido";
 
@@ -212,6 +211,24 @@ export interface Handoff {
   resolvido_em: string | null;
 }
 
+/** Estágio derivado do board operacional unificado (tarefa 0066) — combina
+ * `atendimentos.status` + `pedidos.status` sem ser uma terceira fonte de
+ * verdade gravada em disco; calculado a cada leitura em `paraContexto`
+ * (apps/api/src/routes/atendimentos.ts). Inclui `resolvido` só como valor
+ * de trânsito pra filtragem (um atendimento resolvido sem pedido some do
+ * board sozinho) — nunca é uma coluna do Kanban (`KANBAN_COLUNAS` não o
+ * lista, ver apps/web/src/components/statusMeta.tsx). */
+export type EstagioOperacional =
+  | "ia_atendendo"
+  | "solicitou_humano"
+  | "humano_atendendo"
+  | "resolvido"
+  | "aberto"
+  | "em_preparacao"
+  | "pronto"
+  | "entregue"
+  | "cancelado";
+
 /** Atendimento com os dados relacionados que a tela de Kanban e a tela de
  * conversa precisam, já compostos numa única consulta (ver apps/api). */
 export interface AtendimentoComContexto extends Atendimento {
@@ -220,4 +237,11 @@ export interface AtendimentoComContexto extends Atendimento {
   /** Pedido mais recente não cancelado deste atendimento — alimenta o valor
    * mostrado no card do Kanban (ver docs/product/03-atendimento-e-crm.md §3.2). */
   pedido_aberto: import("./pedidos.js").Pedido | null;
+  estagio_operacional: EstagioOperacional;
+  /** Pedido que efetivamente determinou `estagio_operacional` (tarefa 0066)
+   * — igual a `pedido_aberto` na maioria dos casos, mas é o pedido
+   * cancelado mais recente quando o estágio é `cancelado` (`pedido_aberto`
+   * nunca aponta pra um pedido cancelado). Usado pelo card do Kanban pra
+   * saber qual pedido arquivar na coluna "Cancelado". */
+  pedido_estagio: import("./pedidos.js").Pedido | null;
 }

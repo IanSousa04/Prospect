@@ -30,7 +30,7 @@ insert into conhecimento_itens (empresa_id, categoria, titulo, conteudo) values
 on conflict do nothing;
 
 insert into atendimentos (id, empresa_id, cliente_id, status, intencao, prioridade, ultima_mensagem_em) values
-  ('00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000101', 'ia_solicitou_humano', 'Pagamento', 'alta', now() - interval '3 minutes'),
+  ('00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000101', 'solicitou_humano', 'Pagamento', 'alta', now() - interval '3 minutes'),
   ('00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000102', 'ia_atendendo', 'Compra', 'normal', now() - interval '2 minutes'),
   ('00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000201', 'ia_atendendo', 'Dúvida', 'normal', now() - interval '10 minutes')
 on conflict (id) do nothing;

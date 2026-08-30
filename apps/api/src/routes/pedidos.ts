@@ -22,25 +22,15 @@ interface CriarPedidoBody {
   itens: ItemBody[];
 }
 
-const STATUS_VALIDOS: StatusPedido[] = [
-  "aberto",
-  "confirmado",
-  "em_preparo",
-  "pronto",
-  "saiu_para_entrega",
-  "entregue",
-  "cancelado",
-];
+const STATUS_VALIDOS: StatusPedido[] = ["aberto", "em_preparacao", "pronto", "entregue", "cancelado"];
 
 // Transições permitidas — evita, por exemplo, "reabrir" um pedido já
 // entregue/cancelado a partir do painel (mudança de status é uma ação
 // operacional real, não um campo solto).
 const TRANSICOES: Record<StatusPedido, StatusPedido[]> = {
-  aberto: ["confirmado", "cancelado"],
-  confirmado: ["em_preparo", "cancelado"],
-  em_preparo: ["pronto", "cancelado"],
-  pronto: ["saiu_para_entrega", "entregue", "cancelado"],
-  saiu_para_entrega: ["entregue", "cancelado"],
+  aberto: ["em_preparacao", "cancelado"],
+  em_preparacao: ["pronto", "cancelado"],
+  pronto: ["entregue", "cancelado"],
   entregue: [],
   cancelado: [],
 };
@@ -172,6 +162,42 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
       return data;
     },
   );
+
+  // Arquivar (tarefa 0066) — sai da visão ativa do board unificado sem
+  // mexer em `status` (fonte de verdade própria, consumida por outras
+  // rotas isoladamente); só permitido em pedidos que já saíram do fluxo
+  // ativo, nunca num pedido ainda em preparação.
+  app.post<{ Params: { id: string } }>("/pedidos/:id/arquivar", async (request, reply) => {
+    const { empresaId } = request.auth!;
+    const { id } = request.params;
+
+    const { data: pedido } = await supabaseAdmin
+      .from("pedidos")
+      .select("status")
+      .eq("id", id)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    if (!pedido) return reply.code(404).send({ error: "pedido_nao_encontrado" });
+
+    if (!["entregue", "cancelado"].includes(pedido.status)) {
+      return reply.code(400).send({ error: "pedido_ativo_nao_pode_ser_arquivado" });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("pedidos")
+      .update({ arquivado_em: new Date().toISOString() })
+      .eq("id", id)
+      .eq("empresa_id", empresaId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      request.log.error(error);
+      return reply.code(500).send({ error: "erro_ao_arquivar_pedido" });
+    }
+    if (!data) return reply.code(404).send({ error: "pedido_nao_encontrado" });
+    return data;
+  });
 
   app.post<{ Params: { id: string }; Body: { status_pagamento: string } }>(
     "/pedidos/:id/pagamento",

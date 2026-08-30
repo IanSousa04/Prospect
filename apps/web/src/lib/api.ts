@@ -255,6 +255,11 @@ export const api = {
     return res.json();
   },
 
+  async arquivarPedido(id: string): Promise<Pedido> {
+    const res = await authedFetch(`/pedidos/${id}/arquivar`, { method: "POST" });
+    return res.json();
+  },
+
   async atualizarPagamentoPedido(id: string, status_pagamento: StatusPagamento): Promise<Pedido> {
     const res = await authedFetch(`/pedidos/${id}/pagamento`, {
       method: "POST",

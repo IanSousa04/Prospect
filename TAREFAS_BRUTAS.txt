@@ -1,0 +1,9 @@
+- Criar a página publica (mobile-first), responsiva para desktop, registrando o pedido através do numero de telefone, com confirmação do código, e aparecendo no kanban
+
+- Ter um cadastro de cidades que fazem entrega (se tiver só uma cidade não é necessário pedir a cidade no endereço, pode assumir a unica do cadastro)
+
+- Testar "afrouxar" um pouco as regras de anti-alucinação, o ideal é se tiver alucinação ser enviado uma mensagem pedindo para esclarecer melhor a mensagem, e se acontecer mais de 2 vezes aí sim cai no handoff (o ideial é ter uma configuração de sensibilidade do handoff)
+
+- Ter opções de personalidades, simpatico, direto, objetivo...
+
+- Criar um histórico de todas as ações executas no projeto, por humano ou IA. Movimentação entre colunas, arquivamento, soft-deletes.

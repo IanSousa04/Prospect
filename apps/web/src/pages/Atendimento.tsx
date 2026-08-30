@@ -30,21 +30,17 @@ const currency = new Intl.NumberFormat("pt-BR", {
 // Espelha TRANSICOES de apps/api/src/routes/pedidos.ts — só pra filtrar o
 // select e evitar que o usuário escolha uma transição que o servidor recusa.
 const TRANSICOES_PEDIDO: Record<StatusPedido, StatusPedido[]> = {
-  aberto: ["aberto", "confirmado", "cancelado"],
-  confirmado: ["confirmado", "em_preparo", "cancelado"],
-  em_preparo: ["em_preparo", "pronto", "cancelado"],
-  pronto: ["pronto", "saiu_para_entrega", "entregue", "cancelado"],
-  saiu_para_entrega: ["saiu_para_entrega", "entregue", "cancelado"],
+  aberto: ["aberto", "em_preparacao", "cancelado"],
+  em_preparacao: ["em_preparacao", "pronto", "cancelado"],
+  pronto: ["pronto", "entregue", "cancelado"],
   entregue: ["entregue"],
   cancelado: ["cancelado"],
 };
 
 const STATUS_PEDIDO_LABEL: Record<StatusPedido, string> = {
   aberto: "Aberto",
-  confirmado: "Confirmado",
-  em_preparo: "Em preparo",
+  em_preparacao: "Em preparação",
   pronto: "Pronto",
-  saiu_para_entrega: "Saiu para entrega",
   entregue: "Entregue",
   cancelado: "Cancelado",
 };
@@ -664,7 +660,7 @@ export default function Atendimento() {
             >
               <div className="handoff-card">
                 <div className="handoff-head">
-                  {STATUS_META.ia_solicitou_humano.icon}
+                  {STATUS_META.solicitou_humano.icon}
                   Novo handoff
                 </div>
                 <div>

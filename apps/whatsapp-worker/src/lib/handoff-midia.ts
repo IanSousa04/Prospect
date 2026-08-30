@@ -39,7 +39,7 @@ export async function criarHandoffMidiaNaoSuportada(
 
   await supabaseAdmin
     .from("atendimentos")
-    .update({ status: "ia_solicitou_humano" })
+    .update({ status: "solicitou_humano" })
     .eq("id", atendimentoId)
     .eq("empresa_id", env.empresaId);
 }

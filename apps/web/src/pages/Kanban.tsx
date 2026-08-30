@@ -100,9 +100,15 @@ export default function Kanban() {
   const porColuna = useMemo(() => {
     const grupos = new Map<string, AtendimentoComContexto[]>();
     for (const status of KANBAN_COLUNAS) grupos.set(status, []);
-    for (const a of atendimentos) grupos.get(a.status)?.push(a);
+    for (const a of atendimentos) grupos.get(a.estagio_operacional)?.push(a);
     return grupos;
   }, [atendimentos]);
+
+  async function aoArquivar(e: React.MouseEvent, pedidoId: string) {
+    e.stopPropagation();
+    await api.arquivarPedido(pedidoId);
+    carregar();
+  }
 
   if (loading) {
     return <div className="empty-state">Carregando atendimentos…</div>;
@@ -146,41 +152,53 @@ export default function Kanban() {
                 <div className="col-count">{itens.length}</div>
               </div>
               <div className="col-body">
-                {itens.map((a) => (
-                  <button
-                    key={a.id}
-                    className="card"
-                    style={
-                      {
-                        "--accent": meta.accentVar,
-                        "--accent-bg": meta.accentBgVar,
-                      } as React.CSSProperties
-                    }
-                    onClick={() => navigate(`/atendimentos/${a.id}`)}
-                    onMouseEnter={(e) => aoEntrarNoCard(a.id, e)}
-                    onMouseLeave={aoSairDoCard}
-                  >
-                    <div className="card-top">
-                      <div className="card-owner">
-                        <div className="owner-icon">{meta.icon}</div>
-                        <div className="card-name">{a.cliente?.nome ?? a.cliente?.telefone}</div>
+                {itens.map((a) => {
+                  const arquivavel = (status === "cancelado" || status === "entregue") && a.pedido_estagio;
+                  return (
+                    <button
+                      key={a.id}
+                      className={`card${status === "cancelado" ? " card-cancelado" : ""}`}
+                      style={
+                        {
+                          "--accent": meta.accentVar,
+                          "--accent-bg": meta.accentBgVar,
+                        } as React.CSSProperties
+                      }
+                      onClick={() => navigate(`/atendimentos/${a.id}`)}
+                      onMouseEnter={(e) => aoEntrarNoCard(a.id, e)}
+                      onMouseLeave={aoSairDoCard}
+                    >
+                      <div className="card-top">
+                        <div className="card-owner">
+                          <div className="owner-icon">{meta.icon}</div>
+                          <div className="card-name">{a.cliente?.nome ?? a.cliente?.telefone}</div>
+                        </div>
+                        {status === "cancelado" && <span className="badge-cancelado">Cancelado</span>}
                       </div>
-                    </div>
-                    {a.intencao && <div className="intent-pill">{a.intencao}</div>}
-                    {a.handoff_aberto && (
-                      <div className="handoff-note">
-                        {meta.icon}
-                        <span>{a.handoff_aberto.motivo}</span>
+                      {a.intencao && <div className="intent-pill">{a.intencao}</div>}
+                      {a.handoff_aberto && status === "solicitou_humano" && (
+                        <div className="handoff-note">
+                          {meta.icon}
+                          <span>
+                            {a.handoff_aberto.origem === "cliente_solicitou" ? "Cliente pediu" : "IA solicitou"} —{" "}
+                            {a.handoff_aberto.motivo}
+                          </span>
+                        </div>
+                      )}
+                      <div className="card-bottom">
+                        <div className="card-value">
+                          {a.pedido_estagio ? currency.format(a.pedido_estagio.total) : "—"}
+                        </div>
+                        <div className="card-meta">{tempoDecorrido(a.ultima_mensagem_em)}</div>
                       </div>
-                    )}
-                    <div className="card-bottom">
-                      <div className="card-value">
-                        {a.pedido_aberto ? currency.format(a.pedido_aberto.total) : "—"}
-                      </div>
-                      <div className="card-meta">{tempoDecorrido(a.ultima_mensagem_em)}</div>
-                    </div>
-                  </button>
-                ))}
+                      {arquivavel && (
+                        <button className="btn-arquivar" onClick={(e) => aoArquivar(e, a.pedido_estagio!.id)}>
+                          Arquivar
+                        </button>
+                      )}
+                    </button>
+                  );
+                })}
                 {itens.length === 0 && <div className="empty-state">Nenhum atendimento</div>}
               </div>
             </div>

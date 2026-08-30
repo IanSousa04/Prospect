@@ -4,7 +4,7 @@ import { registerTool, type ToolContext } from "./registry.js";
 // Status que ainda ocupam a fila de preparo (mesmos valores de
 // StatusPedido em @prospect/shared/pedidos.ts) — "pronto" em diante já não
 // soma tempo de espera pro cálculo de prazo de um pedido novo.
-const STATUS_FILA_ATIVA = ["aberto", "confirmado", "em_preparo"] as const;
+const STATUS_FILA_ATIVA = ["aberto", "em_preparacao"] as const;
 
 /**
  * Resposta pra "quanto tempo demora meu pedido?" (tasks/0075) — nos dois

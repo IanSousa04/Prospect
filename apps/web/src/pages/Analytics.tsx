@@ -9,10 +9,8 @@ const percent = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFracti
 
 const STATUS_LABEL: Record<string, string> = {
   aberto: "Aberto",
-  confirmado: "Confirmado",
-  em_preparo: "Em preparo",
+  em_preparacao: "Em preparação",
   pronto: "Pronto",
-  saiu_para_entrega: "Saiu para entrega",
   entregue: "Entregue",
   cancelado: "Cancelado",
 };
