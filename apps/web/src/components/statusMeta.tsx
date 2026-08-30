@@ -1,4 +1,4 @@
-import type { EstagioOperacional } from "@prospect/shared";
+import type { EstagioOperacional, StatusAtendimento } from "@prospect/shared";
 
 export interface StatusMeta {
   label: string;
@@ -89,21 +89,9 @@ const IconChef = (
 
 /** Única fonte de verdade de cor/ícone/label por etapa do fluxo — usada no
  * Kanban e na tela de atendimento, pra que a mesma etapa pareça igual em todo
- * lugar. Cinco colunas operacionais + `resolvido`, que nunca é coluna (ver
+ * lugar. Três colunas operacionais + `resolvido`, que nunca é coluna (ver
  * `KANBAN_COLUNAS`): é só o valor de trânsito de quem já saiu do board. */
 export const STATUS_META: Record<EstagioOperacional, StatusMeta> = {
-  ia_atendendo: {
-    label: "IA atendendo",
-    accentVar: "var(--ia)",
-    accentBgVar: "var(--ia-bg)",
-    icon: IconIA,
-  },
-  aguardando_humano: {
-    label: "Aguardando humano",
-    accentVar: "var(--orange)",
-    accentBgVar: "var(--orange-bg)",
-    icon: IconAlert,
-  },
   em_atendimento: {
     label: "Em atendimento",
     accentVar: "var(--blue)",
@@ -130,11 +118,40 @@ export const STATUS_META: Record<EstagioOperacional, StatusMeta> = {
   },
 };
 
-/** As 5 colunas do Kanban operacional, na ordem do fluxo. `resolvido` não
+/** Quem está conduzindo o atendimento — propriedade do atendimento
+ * (`atendimentos.status`), exibida como badge no card em qualquer coluna.
+ * Independente de `STATUS_META` de propósito: coluna diz a ETAPA, o badge diz
+ * o RESPONSÁVEL, e as duas informações nunca se confundem. */
+export const STATUS_ATENDIMENTO_META: Record<StatusAtendimento, StatusMeta> = {
+  ia_atendendo: {
+    label: "IA",
+    accentVar: "var(--ia)",
+    accentBgVar: "var(--ia-bg)",
+    icon: IconIA,
+  },
+  solicitou_humano: {
+    label: "Solicitou humano",
+    accentVar: "var(--orange)",
+    accentBgVar: "var(--orange-bg)",
+    icon: IconAlert,
+  },
+  humano_atendendo: {
+    label: "Humano",
+    accentVar: "var(--blue)",
+    accentBgVar: "var(--blue-bg)",
+    icon: IconHeadset,
+  },
+  resolvido: {
+    label: "Resolvido",
+    accentVar: "var(--gray)",
+    accentBgVar: "var(--gray-bg)",
+    icon: IconCheck,
+  },
+};
+
+/** As 3 colunas do Kanban operacional, na ordem do fluxo. `resolvido` não
  * está aqui por definição: atendimento encerrado sai do board. */
 export const KANBAN_COLUNAS: EstagioOperacional[] = [
-  "ia_atendendo",
-  "aguardando_humano",
   "em_atendimento",
   "na_cozinha",
   "pronto",

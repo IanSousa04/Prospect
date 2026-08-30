@@ -1,24 +1,23 @@
-- 
-
-- A página publica deve guardar a sessão do usuário que entrou pelo numero de telefone durante 24 horas, não pedindo login quando acessar novamente, exibindo históricos de pedidos.
-
 - Quero modificar meu projeto, a IA não deve mais ser o centro da plataforma (executar ações de criar/cancelar pedido, adicionar itens...), o coração da plataforma é o link publico de receber o pedido, a IA deve apenas auxiliar nas dúvidas , informar prazo de entrega (inicialmente fixo de 60 a 90 minutos). Verifique o que é necessário para fazer essas alterações (RAG, embeddings, vetores e etc). Se necessário consulte um projeto semelhante em C:\Dev\Claude\Eddy.
+Deve remover as tasks (arquivo .md e do ROADMAP.md), que não fizerem mais sentido com essa nova arquitetura.
 
-- Temos que fazer algumas alterações estruturais no projeto.
-Quero ter apenas as colunas: "Em atendimento", "Na cozinha" e "Pronto".
-No card do Kanban preciso ter os status de atendimento: IA, Humano, Solicitou Humano.
-A ordenação em cada coluna tem que ser primeiro os que "Solicitou Humano", depois o horário de inicio da conversa.
-Quando o status mudar para "Solicitou Humano" deve mudar o aspecto do card, como alerta visual para o operador. 
+- Deve ter um tooltipo em cada botão do card no Kanban explicando a ação que aquele botão faz
+
+- Ao clicar em atender no card o atendimento já deve abrir automaticamente.
+
+- Na página publica deve ter a opção de editar o item do carrinho.
+
+- Na plataforma deve ter uma Aba para personalizar a página publica (cores, fontes, organização, padrões e etc.)
+
+- Se o whatsapp não estiver conectado a página publica deve exibir alguma mensagem de erro e não permitir o envio de código.
+
+- NA página publica deve salvar o telefone na localStorage para já ficar preenchido no campo telefone, sempre que clicar em "Continuar"
 
 - As mudanças de status do card devem enviar mensagem para o whatsapp, sem gravar no histório.
 "Na cozinha": Seu pedido foi aprovado e já está sendo preparado!
 "Pronto": Seu pedido em breve será entregue!
 
-- Iniciar o atendimento já mandando o link do cardápio digital
-
-- Ter um cadastro de cidades que fazem entrega (se tiver só uma cidade não é necessário pedir a cidade no endereço, pode assumir a unica do cadastro)
-
-- Testar "afrouxar" um pouco as regras de anti-alucinação, o ideal é se tiver alucinação ser enviado uma mensagem pedindo para esclarecer melhor a mensagem, e se acontecer mais de 2 vezes aí sim cai no handoff (o ideial é ter uma configuração de sensibilidade do handoff)
+- Iniciar o atendimento já mandando o link do cardápio digital (página publica)
 
 - Ter opções de personalidades, simpatico, direto, objetivo...
 
@@ -29,3 +28,5 @@ Quando o status mudar para "Solicitou Humano" deve mudar o aspecto do card, como
 - Quando o whatsapp desconectar deve aparecer uma mensagem gigante na tela inicial para conectar novamente, se não conectar não deve ser possivel realizar nenhuma operação na plataforma
 
 - A estrutura carrinho não faz sentido na plataforma de food service, analisar uma forma de utilizar outra nomenclatura ou outra coisa.
+
+- Dar uma limpada no projeto, remover arquivos, funções, tabelas e/ou colunas não utilizadas no projeto.

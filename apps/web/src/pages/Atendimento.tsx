@@ -15,10 +15,10 @@ import type {
   StatusPedido,
   TipoEntrega,
 } from "@prospect/shared";
-import { STATUS_PEDIDO_EDITAVEIS, estagioDeAtendimento } from "@prospect/shared";
+import { STATUS_PEDIDO_EDITAVEIS } from "@prospect/shared";
 import { api } from "../lib/api.js";
 import { supabase } from "../lib/supabase.js";
-import { STATUS_META } from "../components/statusMeta.js";
+import { STATUS_ATENDIMENTO_META } from "../components/statusMeta.js";
 import PedidoBuilder from "../components/PedidoBuilder.js";
 import "./Atendimento.css";
 
@@ -409,7 +409,7 @@ export default function Atendimento() {
     );
   }
 
-  const meta = STATUS_META[estagioDeAtendimento(atendimento.status)];
+  const meta = STATUS_ATENDIMENTO_META[atendimento.status];
   const podeAssumir =
     atendimento.status !== "resolvido" &&
     atendimento.status !== "humano_atendendo";
@@ -600,9 +600,9 @@ export default function Atendimento() {
             {mensagens.map((m) => (
               <div key={m.id} className={`msg-row from-${m.remetente}`}>
                 <div className="msg-tag">
-                  {m.remetente === "ia" && STATUS_META.ia_atendendo.icon}
+                  {m.remetente === "ia" && STATUS_ATENDIMENTO_META.ia_atendendo.icon}
                   {m.remetente === "humano" &&
-                    STATUS_META.em_atendimento.icon}
+                    STATUS_ATENDIMENTO_META.humano_atendendo.icon}
                   {m.remetente === "cliente"
                     ? "Cliente"
                     : m.remetente === "ia"
@@ -660,7 +660,7 @@ export default function Atendimento() {
             >
               <div className="handoff-card">
                 <div className="handoff-head">
-                  {STATUS_META.aguardando_humano.icon}
+                  {STATUS_ATENDIMENTO_META.solicitou_humano.icon}
                   Novo handoff
                 </div>
                 <div>

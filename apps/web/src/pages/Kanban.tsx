@@ -115,7 +115,21 @@ export default function Kanban() {
   const porColuna = useMemo(() => {
     const grupos = new Map<EstagioOperacional, AtendimentoComContexto[]>();
     for (const estagio of KANBAN_COLUNAS) grupos.set(estagio, []);
-    for (const a of atendimentos) grupos.get(a.estagio_operacional)?.push(a);
+    // Ordenação de cada coluna: "Solicitou humano" sempre no topo (alerta pro
+    // operador), depois pela última interação — mais recente primeiro, mesmo
+    // comportamento da lista do WhatsApp.
+    for (const a of atendimentos) {
+      const itens = grupos.get(a.estagio_operacional);
+      if (itens) itens.push(a);
+    }
+    for (const itens of grupos.values()) {
+      itens.sort((x, y) => {
+        const xUrgente = x.status === "solicitou_humano" ? 0 : 1;
+        const yUrgente = y.status === "solicitou_humano" ? 0 : 1;
+        if (xUrgente !== yUrgente) return xUrgente - yUrgente;
+        return new Date(y.ultima_mensagem_em).getTime() - new Date(x.ultima_mensagem_em).getTime();
+      });
+    }
     return grupos;
   }, [atendimentos]);
 
@@ -125,7 +139,7 @@ export default function Kanban() {
   const precisaTick = useMemo(
     () =>
       atendimentos.some(
-        (a) => a.estagio_operacional === "aguardando_humano" || a.estagio_operacional === "em_atendimento",
+        (a) => a.status === "solicitou_humano" || a.status === "humano_atendendo",
       ),
     [atendimentos],
   );

@@ -220,16 +220,14 @@ export interface Handoff {
  * leitura em `paraContexto` (apps/api/src/routes/atendimentos.ts), nunca
  * gravado em disco.
  *
- * São 5 colunas + `resolvido`, que só existe como valor de trânsito pra
+ * São 3 colunas + `resolvido`, que só existe como valor de trânsito pra
  * filtragem (atendimento resolvido some do board sozinho). Note o que NÃO é
- * estágio: "quem é o responsável" (IA ou humano) é propriedade do
- * atendimento, exibida no card em qualquer coluna; e `aberto`/`entregue`/
- * `cancelado` de pedido não são colunas — um pedido só montado deixa o card
- * na coluna de conversa (onde existe a ação "Confirmar"), e um pedido
- * entregue/cancelado sai do board de pedidos. */
+ * estágio: "quem atende" (IA, humano ou solicitou humano) é propriedade do
+ * atendimento (`atendimentos.status`), exibida como badge no card em qualquer
+ * coluna; e `aberto`/`entregue`/`cancelado` de pedido não são colunas — um
+ * pedido só montado deixa o card na coluna de conversa (onde existe a ação
+ * "Confirmar"), e um pedido entregue/cancelado sai do board de pedidos. */
 export type EstagioOperacional =
-  | "ia_atendendo"
-  | "aguardando_humano"
   | "em_atendimento"
   | "na_cozinha"
   | "pronto"
@@ -238,11 +236,13 @@ export type EstagioOperacional =
 /** Ponte entre o vocabulário do BANCO (`atendimentos.status`) e o da
  * OPERAÇÃO (`EstagioOperacional`). Existe como função explícita, e não por
  * coincidência de nomes, justamente pra impedir que status de conversa e
- * etapa de fluxo voltem a se misturar sem o compilador reclamar. */
+ * etapa de fluxo voltem a se misturar sem o compilador reclamar. Os três
+ * status de conversa colapsam numa única coluna "Em atendimento"; quem atende
+ * continua distinguível pelo badge do card, que lê `atendimentos.status`
+ * direto. */
 export function estagioDeAtendimento(status: StatusAtendimento): EstagioOperacional {
-  if (status === "solicitou_humano") return "aguardando_humano";
-  if (status === "humano_atendendo") return "em_atendimento";
-  return status;
+  if (status === "resolvido") return "resolvido";
+  return "em_atendimento";
 }
 
 /** Atendimento com os dados relacionados que a tela de Kanban e a tela de

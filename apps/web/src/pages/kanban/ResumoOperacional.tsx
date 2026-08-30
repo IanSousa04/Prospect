@@ -2,8 +2,9 @@ import type { AtendimentoComContexto, EstagioOperacional } from "@prospect/share
 import { KANBAN_COLUNAS, STATUS_META } from "../../components/statusMeta.js";
 
 /** Panorama da operação em uma linha, pra o operador não precisar contar
- * cards. "Aguardando humano" ganha destaque quando tem alguém na fila — é a
- * única coluna que representa trabalho parado esperando por uma pessoa. */
+ * cards. "Em atendimento" ganha destaque quando tem alguém esperando por uma
+ * pessoa (status solicitou_humano) — é o único caso que representa trabalho
+ * parado esperando por ação humana. */
 export default function ResumoOperacional({
   porColuna,
 }: {
@@ -14,7 +15,8 @@ export default function ResumoOperacional({
       {KANBAN_COLUNAS.map((estagio) => {
         const meta = STATUS_META[estagio];
         const total = porColuna.get(estagio)?.length ?? 0;
-        const alerta = estagio === "aguardando_humano" && total > 0;
+        const alerta =
+          estagio === "em_atendimento" && (porColuna.get(estagio)?.some((a) => a.status === "solicitou_humano") ?? false);
         return (
           <div
             className={`resumo-item${alerta ? " resumo-item-alerta" : ""}`}

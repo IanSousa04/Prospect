@@ -73,7 +73,7 @@
 .board {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(5, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
   gap: 12px;
   padding: 0 24px 20px 24px;
   /* Scroll horizontal em tela estreita: antes era `overflow: hidden` com mais
@@ -257,20 +257,39 @@
   gap: 8px;
   margin-top: 1px;
 }
-.card-responsavel {
+/* Badge de quem conduz o atendimento — a coluna diz a ETAPA, o card diz o
+   RESPONSÁVEL (IA / Humano / Solicitou humano). */
+.card-status {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 4px;
+  padding: 2px 6px;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.card-responsavel-ia {
+.card-status svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+.card-status-solicitou_humano {
+  color: var(--orange);
+  background: var(--orange-bg);
+}
+.card-status-ia_atendendo {
   color: var(--ia);
+  background: var(--ia-bg);
+}
+.card-status-humano_atendendo {
+  color: var(--blue);
+  background: var(--blue-bg);
 }
 .card-tempo {
   display: flex;
@@ -305,6 +324,25 @@
 .card-espera-critico .card-tempo {
   color: var(--red);
   font-weight: 700;
+}
+
+/* Alerta de "Solicitou humano": o card ganha borda laranja e um pulso sutil
+   de fundo — sinal persistente pro operador de que tem gente esperando por
+   uma pessoa. Cor nunca é o único sinal: o badge laranja e o texto do
+   cronômetro estão sempre visíveis ao lado. */
+.card-solicitou {
+  border-left-width: 5px;
+  border-left-color: var(--orange);
+  animation: solicitou-pulso 2.4s ease-in-out infinite;
+}
+@keyframes solicitou-pulso {
+  0%,
+  100% {
+    background: var(--bg-card);
+  }
+  50% {
+    background: var(--orange-bg);
+  }
 }
 
 /* ----------------------------------------------------------- ações do card */

@@ -99,7 +99,7 @@ export function acoesDoCard(a: AtendimentoComContexto): AcaoKanban[] {
   const acoes: AcaoKanban[] = [];
   const pedido = a.pedido_estagio;
 
-  if (a.estagio_operacional === "aguardando_humano") acoes.push(ATENDER);
+  if (a.status === "solicitou_humano") acoes.push(ATENDER);
   if (pedido?.status === "aberto") acoes.push(CONFIRMAR);
   if (pedido?.status === "em_preparacao") acoes.push(PRONTO);
   if (pedido?.status === "pronto") acoes.push(ENTREGAR);

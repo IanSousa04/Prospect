@@ -1,5 +1,11 @@
 import type { AtendimentoComContexto } from "@prospect/shared";
-import { STATUS_META, duracaoAtendimento, tempoDecorrido, tempoEspera } from "../../components/statusMeta.js";
+import {
+  STATUS_ATENDIMENTO_META,
+  STATUS_META,
+  duracaoAtendimento,
+  tempoDecorrido,
+  tempoEspera,
+} from "../../components/statusMeta.js";
 import { acoesDoCard, type AcaoKanban } from "./acoes.js";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -9,25 +15,25 @@ const ITENS_VISIVEIS = 3;
  * coluna. É o ponto da reestruturação: a coluna diz a ETAPA, o card diz o
  * RESPONSÁVEL, e as duas informações nunca mais se confundem. */
 function Responsavel({ a }: { a: AtendimentoComContexto }) {
-  const ia = a.status === "ia_atendendo";
+  const meta = STATUS_ATENDIMENTO_META[a.status];
   return (
-    <span className={`card-responsavel${ia ? " card-responsavel-ia" : ""}`}>
-      <span aria-hidden="true">{ia ? "🤖" : "👤"}</span>
-      {ia ? "IA" : (a.responsavel?.nome ?? "Humano")}
+    <span className={`card-status card-status-${a.status}`}>
+      <span aria-hidden="true">{meta.icon}</span>
+      {meta.label}
     </span>
   );
 }
 
-/** Tempo mostrado no card, que muda de significado conforme a etapa: na
- * coluna de espera é há quanto tempo o cliente aguarda (com nível de
- * atenção), em atendimento é a duração do atendimento, e no resto é só o
- * tempo desde a última movimentação. */
+/** Tempo mostrado no card, que muda de significado conforme o status de
+ * atendimento: solicitou humano é há quanto tempo o cliente aguarda (com
+ * nível de atenção), humano atendendo é a duração do atendimento, e com a IA
+ * é só o tempo desde a última movimentação. */
 function tempoDoCard(a: AtendimentoComContexto): { rotulo: string; texto: string; nivel: string } {
-  if (a.estagio_operacional === "aguardando_humano") {
+  if (a.status === "solicitou_humano") {
     const { texto, nivel } = tempoEspera(a.handoff_aberto?.criado_em ?? a.ultima_mensagem_em);
     return { rotulo: "aguardando há", texto, nivel };
   }
-  if (a.estagio_operacional === "em_atendimento" && a.assumido_em) {
+  if (a.status === "humano_atendendo" && a.assumido_em) {
     return { rotulo: "em atendimento há", texto: duracaoAtendimento(a.assumido_em), nivel: "normal" };
   }
   if (a.pedido_estagio && (a.estagio_operacional === "na_cozinha" || a.estagio_operacional === "pronto")) {
@@ -62,11 +68,15 @@ export default function KanbanCard({
   const tempo = tempoDoCard(a);
   const itens = pedido?.itens ?? [];
   const restantes = itens.length - ITENS_VISIVEIS;
+  const solicitouHumano = a.status === "solicitou_humano";
+  // No alerta, o card inteiro assume o laranja do "Solicitou humano" — borda,
+  // nota de handoff e avisos mudam junto, não só o badge.
+  const accent = solicitouHumano ? STATUS_ATENDIMENTO_META.solicitou_humano : meta;
 
   return (
     <article
-      className={`card card-espera-${tempo.nivel}`}
-      style={{ "--accent": meta.accentVar, "--accent-bg": meta.accentBgVar } as React.CSSProperties}
+      className={`card card-espera-${tempo.nivel}${solicitouHumano ? " card-solicitou" : ""}`}
+      style={{ "--accent": accent.accentVar, "--accent-bg": accent.accentBgVar } as React.CSSProperties}
       onMouseEnter={onEntrarNoCard}
       onMouseLeave={onSairDoCard}
     >
@@ -78,9 +88,9 @@ export default function KanbanCard({
           {pedido?.numero != null && <span className="card-numero mono">#{pedido.numero}</span>}
         </div>
 
-        {a.handoff_aberto && a.estagio_operacional === "aguardando_humano" && (
+        {solicitouHumano && a.handoff_aberto && (
           <div className="handoff-note">
-            {meta.icon}
+            {STATUS_ATENDIMENTO_META.solicitou_humano.icon}
             <span>
               {a.handoff_aberto.origem === "cliente_solicitou" ? "Cliente pediu" : "IA solicitou"} —{" "}
               {a.handoff_aberto.motivo}
