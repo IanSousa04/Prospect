@@ -890,3 +890,28 @@
     transition: none !important;
   }
 }
+
+/* ---------- layout grade (aba "Página pública") ---------- */
+
+/* Organização dos produtos em grade (2+ colunas) em vez da lista padrão. O
+   root recebe `pp-grade`/`pp-lista` (ver publico/aparencia.ts); `pp-lista` é
+   o comportamento atual, então só a variante grade precisa de regra. Colocado
+   depois do @media de 900px pra vencer a grade de desktop existente. */
+.pp-grade .pp-produtos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.pp-grade .pp-produto {
+  flex-direction: column;
+  align-items: stretch;
+}
+.pp-grade .pp-produto-texto {
+  flex: none;
+}
+.pp-grade .pp-produto-imagem {
+  width: 100%;
+  height: auto;
+  flex: none;
+  aspect-ratio: 4 / 3;
+}

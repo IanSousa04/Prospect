@@ -22,6 +22,7 @@ import type {
   PrazoEntregaModo,
   Produto,
   ProdutoDetalhado,
+  PublicoConfig,
   ResumoPedidoIa,
   StatusAtendimento,
   StatusPagamento,
@@ -337,6 +338,19 @@ export const api = {
 
   async buscarStatusWhatsapp(): Promise<Omit<WhatsappConexao, "empresa_id">> {
     const res = await authedFetch("/whatsapp/status");
+    return res.json();
+  },
+
+  async buscarConfiguracaoPublica(): Promise<{ slug: string | null; nome: string | null; publico: PublicoConfig }> {
+    const res = await authedFetch("/configuracao-publica");
+    return res.json();
+  },
+
+  async salvarConfiguracaoPublica(publico: PublicoConfig): Promise<{ publico: PublicoConfig }> {
+    const res = await authedFetch("/configuracao-publica", {
+      method: "PUT",
+      body: JSON.stringify(publico),
+    });
     return res.json();
   },
 

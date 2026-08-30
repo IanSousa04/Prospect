@@ -8,6 +8,7 @@ import type { EnderecoEntrega, FormaPagamento, StatusPedido, TipoEntrega } from 
 import type { Categoria, GrupoOpcoesComOpcoes, Ingrediente, Produto } from "./catalogo.js";
 import type { FluxoPedidoConfig } from "./ia-config.js";
 import type { ResumoPedidoIa } from "./pedido-ia.js";
+import type { PublicoConfig } from "./publico-config.js";
 
 export const TAMANHO_CODIGO_VERIFICACAO = 6;
 /** Curto de propósito: o cliente está com o WhatsApp aberto na outra aba do
@@ -116,6 +117,10 @@ export interface LojaPublica {
   /** Texto de prazo cadastrado pela empresa, quando houver — nunca calculado
    * aqui (CLAUDE.md regra 1). */
   prazo_entrega_texto: string | null;
+  /** Aparência configurada na aba "Página pública" — cor de destaque, fonte e
+   * organização dos produtos. Sempre presente (defaults se nunca configurou),
+   * pra página aplicar as variáveis sem tratar estado ausente. */
+  aparencia: PublicoConfig;
 }
 
 /** Produto como o cliente final vê. Sem `empresa_id`, sem `status`, sem

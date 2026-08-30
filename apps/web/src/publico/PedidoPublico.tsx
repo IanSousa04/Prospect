@@ -12,6 +12,7 @@ import type {
   TipoEntrega,
 } from "@prospect/shared";
 import { apiPublica, apagarToken, lerToken, mensagemDeErro, salvarToken } from "./apiPublico.js";
+import { aparenciaClasse, aparenciaVars } from "./aparencia.js";
 import Identificacao from "./Identificacao.js";
 import ModalProduto from "./ModalProduto.js";
 import { ROTULO_ENTREGA, ROTULO_PAGAMENTO, ROTULO_STATUS_PEDIDO, moeda } from "./formato.js";
@@ -261,7 +262,7 @@ export default function PedidoPublico() {
   const oferecerTipoEntrega = loja.fluxo_pedido.tipos_entrega_oferecidos.length > 1;
 
   return (
-    <div className="pp">
+    <div className={`pp ${aparenciaClasse(loja.aparencia)}`} style={aparenciaVars(loja.aparencia)}>
       <header className="pp-topo">
         <div className="pp-topo-conteudo">
           <div className="pp-topo-marca">

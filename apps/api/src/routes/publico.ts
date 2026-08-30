@@ -37,6 +37,8 @@ import {
   FluxoPedidoConfigSchema,
   INTERVALO_REENVIO_SEGUNDOS,
   MAX_TENTATIVAS_CODIGO,
+  PUBLICO_CONFIG_PADRAO,
+  PublicoConfigSchema,
   VALIDADE_CODIGO_MINUTOS,
   calcularHashConfirmacao,
   calcularSubtotal,
@@ -251,12 +253,15 @@ export async function publicoRoutes(app: FastifyInstance): Promise<void> {
 
       const { data: config } = await supabaseAdmin
         .from("ia_configuracoes")
-        .select("fluxo_pedido_json, prazo_entrega_texto")
+        .select("fluxo_pedido_json, prazo_entrega_texto, publico_json")
         .eq("empresa_id", empresa.id)
         .maybeSingle();
 
       const fluxo = FluxoPedidoConfigSchema.safeParse(
         config?.fluxo_pedido_json ?? {},
+      );
+      const aparencia = PublicoConfigSchema.safeParse(
+        config?.publico_json ?? {},
       );
 
       const loja: LojaPublica = {
@@ -267,6 +272,7 @@ export async function publicoRoutes(app: FastifyInstance): Promise<void> {
         // Texto cadastrado pela empresa ou nada — a página nunca estima prazo
         // por conta própria (CLAUDE.md regra 1).
         prazo_entrega_texto: config?.prazo_entrega_texto ?? null,
+        aparencia: aparencia.success ? aparencia.data : PUBLICO_CONFIG_PADRAO,
       };
       return loja;
     },

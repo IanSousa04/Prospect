@@ -11,6 +11,7 @@ import {
   normalizarTelefoneBr,
 } from "@prospect/shared";
 import { apiPublica, mensagemDeErro } from "./apiPublico.js";
+import { aparenciaClasse, aparenciaVars } from "./aparencia.js";
 
 /** Máscara de digitação. Só apresentação — quem decide se o número é válido é
  * `normalizarTelefoneBr`, a MESMA função que a API usa (nenhuma regra de
@@ -164,7 +165,7 @@ export default function Identificacao(props: {
   }
 
   return (
-    <div className="pp-identificacao">
+    <div className={`pp-identificacao ${aparenciaClasse(loja.aparencia)}`} style={aparenciaVars(loja.aparencia)}>
       <div className="pp-ident-card">
         <div className="pp-ident-marca">
           <span className="pp-ident-inicial">

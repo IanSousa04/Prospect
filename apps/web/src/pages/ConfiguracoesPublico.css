@@ -1,0 +1,208 @@
+.config-pub-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.page-header {
+  padding: 20px 24px 14px 24px;
+  flex-shrink: 0;
+}
+.page-title {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.page-sub {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin-top: 3px;
+}
+
+.config-pub-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 24px 24px;
+  max-width: 720px;
+}
+
+.secao {
+  margin-bottom: 32px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.secao:last-child {
+  border-bottom: none;
+}
+.secao-titulo {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.secao-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin: 0 0 14px 0;
+}
+
+.salvando-hint {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.campo-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: var(--text-1);
+  font-family: inherit;
+}
+
+.ferramenta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.ferramenta-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ferramenta-nome {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ferramenta-desc {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.empty-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* ------------------------- link do cardápio ------------------------- */
+
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.link-input {
+  flex: 1;
+  min-width: 260px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  color: var(--text-1);
+}
+.btn-pub {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-pub:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border);
+}
+.btn-pub-primario {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--bg);
+}
+.btn-pub-primario:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+/* ------------------------------ padrões ------------------------------ */
+
+.padroes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.padrao-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.padrao-card:hover {
+  background: var(--bg-card-hover);
+}
+.padrao-card-ativo {
+  border-color: var(--primary);
+  background: var(--bg-card-hover);
+}
+.padrao-amostra {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--primary);
+  border: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.padrao-nome {
+  white-space: nowrap;
+}
+
+/* ------------------------ cor de destaque ------------------------ */
+
+.cor-controles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cor-picker {
+  width: 36px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--bg-card);
+  cursor: pointer;
+}
+.cor-picker::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+.cor-picker::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+.cor-picker::-moz-color-swatch {
+  border: none;
+  border-radius: 4px;
+}

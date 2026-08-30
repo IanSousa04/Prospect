@@ -14,6 +14,7 @@ import { analyticsRoutes } from "./routes/analytics.js";
 import { iaPermissoesRoutes } from "./routes/ia-permissoes.js";
 import { modoTesteRoutes } from "./routes/modo-teste.js";
 import { iaConfiguracoesRoutes } from "./routes/ia-configuracoes.js";
+import { configuracaoPublicaRoutes } from "./routes/configuracao-publica.js";
 import { whatsappRoutes } from "./routes/whatsapp.js";
 import { publicoRoutes } from "./routes/publico.js";
 
@@ -35,6 +36,7 @@ await app.register(analyticsRoutes);
 await app.register(iaPermissoesRoutes);
 await app.register(modoTesteRoutes);
 await app.register(iaConfiguracoesRoutes);
+await app.register(configuracaoPublicaRoutes);
 await app.register(whatsappRoutes);
 // Sem autenticação de painel — o cliente final monta o pedido sozinho
 // (tarefa 0043). Registrado por último só pra deixar claro na leitura que é

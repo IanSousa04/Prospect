@@ -12,4 +12,5 @@ export * from "./pedido-criacao.js";
 export * from "./risco-acao.js";
 export * from "./whatsapp.js";
 export * from "./pedido-publico.js";
+export * from "./publico-config.js";
 export * from "./validacao-criacao-pedido.js";

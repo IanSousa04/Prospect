@@ -7,6 +7,7 @@ import Conhecimento from "./pages/Conhecimento.js";
 import Clientes from "./pages/Clientes.js";
 import Analytics from "./pages/Analytics.js";
 import ConfiguracoesIa from "./pages/ConfiguracoesIa.js";
+import ConfiguracoesPublico from "./pages/ConfiguracoesPublico.js";
 import WhatsApp from "./pages/WhatsApp.js";
 import Login from "./pages/Login.js";
 import PedidoPublico from "./publico/PedidoPublico.js";
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/configuracoes-ia" element={<ConfiguracoesIa />} />
+        <Route path="/pagina-publica" element={<ConfiguracoesPublico />} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
