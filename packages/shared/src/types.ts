@@ -142,6 +142,10 @@ export interface Atendimento {
   cliente_id: string;
   status: StatusAtendimento;
   responsavel_usuario_id: string | null;
+  /** Instante em que um humano assumiu o atendimento (`/assumir` ou
+   * `/handoffs/:id/assumir`); volta a `null` em `/devolver-ia`. Alimenta o
+   * cronômetro de tempo de atendimento no card do Kanban. */
+  assumido_em: string | null;
   intencao: string | null;
   prioridade: Prioridade;
   ultima_mensagem_em: string;
@@ -211,37 +215,54 @@ export interface Handoff {
   resolvido_em: string | null;
 }
 
-/** Estágio derivado do board operacional unificado (tarefa 0066) — combina
- * `atendimentos.status` + `pedidos.status` sem ser uma terceira fonte de
- * verdade gravada em disco; calculado a cada leitura em `paraContexto`
- * (apps/api/src/routes/atendimentos.ts). Inclui `resolvido` só como valor
- * de trânsito pra filtragem (um atendimento resolvido sem pedido some do
- * board sozinho) — nunca é uma coluna do Kanban (`KANBAN_COLUNAS` não o
- * lista, ver apps/web/src/components/statusMeta.tsx). */
+/** Etapa do fluxo no Kanban operacional — o vocabulário da OPERAÇÃO, não o
+ * das tabelas. Derivado de `atendimentos.status` + `pedidos.status` a cada
+ * leitura em `paraContexto` (apps/api/src/routes/atendimentos.ts), nunca
+ * gravado em disco.
+ *
+ * São 5 colunas + `resolvido`, que só existe como valor de trânsito pra
+ * filtragem (atendimento resolvido some do board sozinho). Note o que NÃO é
+ * estágio: "quem é o responsável" (IA ou humano) é propriedade do
+ * atendimento, exibida no card em qualquer coluna; e `aberto`/`entregue`/
+ * `cancelado` de pedido não são colunas — um pedido só montado deixa o card
+ * na coluna de conversa (onde existe a ação "Confirmar"), e um pedido
+ * entregue/cancelado sai do board de pedidos. */
 export type EstagioOperacional =
   | "ia_atendendo"
-  | "solicitou_humano"
-  | "humano_atendendo"
-  | "resolvido"
-  | "aberto"
-  | "em_preparacao"
+  | "aguardando_humano"
+  | "em_atendimento"
+  | "na_cozinha"
   | "pronto"
-  | "entregue"
-  | "cancelado";
+  | "resolvido";
+
+/** Ponte entre o vocabulário do BANCO (`atendimentos.status`) e o da
+ * OPERAÇÃO (`EstagioOperacional`). Existe como função explícita, e não por
+ * coincidência de nomes, justamente pra impedir que status de conversa e
+ * etapa de fluxo voltem a se misturar sem o compilador reclamar. */
+export function estagioDeAtendimento(status: StatusAtendimento): EstagioOperacional {
+  if (status === "solicitou_humano") return "aguardando_humano";
+  if (status === "humano_atendendo") return "em_atendimento";
+  return status;
+}
 
 /** Atendimento com os dados relacionados que a tela de Kanban e a tela de
  * conversa precisam, já compostos numa única consulta (ver apps/api). */
 export interface AtendimentoComContexto extends Atendimento {
   cliente: Cliente;
   handoff_aberto: Handoff | null;
-  /** Pedido mais recente não cancelado deste atendimento — alimenta o valor
-   * mostrado no card do Kanban (ver docs/product/03-atendimento-e-crm.md §3.2). */
+  /** Humano responsável pelo atendimento, resolvido a partir de
+   * `responsavel_usuario_id`. `null` quando quem conduz é a IA — o card do
+   * Kanban mostra "🤖 IA" nesse caso. */
+  responsavel: { id: string; nome: string } | null;
+  /** Pedido mais recente não cancelado deste atendimento — usado pela tela de
+   * conversa (ver docs/product/03-atendimento-e-crm.md §3.2). O card do Kanban
+   * usa `pedido_estagio`, que é mais restrito. */
   pedido_aberto: import("./pedidos.js").Pedido | null;
   estagio_operacional: EstagioOperacional;
-  /** Pedido que efetivamente determinou `estagio_operacional` (tarefa 0066)
-   * — igual a `pedido_aberto` na maioria dos casos, mas é o pedido
-   * cancelado mais recente quando o estágio é `cancelado` (`pedido_aberto`
-   * nunca aponta pra um pedido cancelado). Usado pelo card do Kanban pra
-   * saber qual pedido arquivar na coluna "Cancelado". */
-  pedido_estagio: import("./pedidos.js").Pedido | null;
+  /** Pedido ATIVO deste atendimento — não arquivado e com status fora de
+   * `cancelado`/`entregue`. É o que o card do Kanban exibe (número, itens,
+   * total) e o que determina as colunas 🍳/🟢. Quando o pedido é entregue ou
+   * cancelado ele deixa de ser ativo e o card volta a ser posicionado pelo
+   * status da conversa. */
+  pedido_estagio: import("./pedidos.js").PedidoComResumo | null;
 }

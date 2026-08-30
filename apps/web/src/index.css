@@ -38,6 +38,14 @@
      vermelho só pro caso mais urgente (cliente pediu humano). */
   --ia: oklch(0.5 0.14 292);
   --ia-bg: oklch(0.94 0.03 292);
+  /* Laranja de "alguém está esperando por mim" (coluna Aguardando humano) e
+     verde de "pronto pra sair". O laranja é vizinho do âmbar da cozinha de
+     propósito — são etapas próximas —, então a coluna nunca se distingue só
+     pela cor: ícone, label e o badge de espera fazem o resto do trabalho. */
+  --orange: oklch(0.55 0.17 50);
+  --orange-bg: oklch(0.94 0.05 50);
+  --green: oklch(0.5 0.14 150);
+  --green-bg: oklch(0.94 0.03 150);
   --amber: oklch(0.51 0.16 70);
   --amber-bg: oklch(0.94 0.05 70);
   --red: oklch(0.53 0.2 25);

@@ -12,7 +12,9 @@ import type {
   TipoEntrega,
   UltimoPedidoCriado,
 } from "@prospect/shared";
+import type { PedidoComResumo, StatusPedido } from "@prospect/shared";
 import {
+  estagioDeAtendimento,
   aplicarMutacaoCarrinho,
   encontrarLinhaEquivalente,
   pedidoVazio,
@@ -124,44 +126,45 @@ async function salvarPedidoIa(empresaId: string, atendimentoId: string, pedido: 
   );
 }
 
-/** Deriva o estágio do board unificado (tarefa 0066) a partir de
- * `atendimentos.status` + `pedidos.status`, sem gravar uma terceira fonte
- * de verdade: se existe pedido não cancelado, o estágio é o status do
- * pedido; senão, se existe pedido cancelado mais recente, é `cancelado`;
- * senão, é o próprio status do atendimento (já reduzido pela tarefa 0064). */
-function maisRecente<T extends { criado_em: string }>(itens: T[]): T | null {
-  return itens.reduce<T | null>((mais, atual) => {
-    if (!mais) return atual;
-    return new Date(atual.criado_em) > new Date(mais.criado_em) ? atual : mais;
-  }, null);
-}
+/** Um pedido só "domina" a coluna do card enquanto está em produção. Pedido
+ * arquivado, entregue ou cancelado sai da visão ativa do board: o card volta a
+ * ser posicionado pelo status da conversa (que, no caso da entrega, a rota
+ * `/pedidos/:id/entregar` já deixou `resolvido`). */
+const STATUS_PEDIDO_ATIVO: StatusPedido[] = ["aberto", "em_preparacao", "pronto"];
 
+/** Deriva a etapa do fluxo (`EstagioOperacional`) a partir de
+ * `atendimentos.status` + `pedidos.status`, sem gravar uma terceira fonte de
+ * verdade. Só pedido JÁ CONFIRMADO define coluna própria — um pedido `aberto`
+ * (montado, não confirmado) deixa o card na coluna de conversa, onde o humano
+ * tem a ação "Confirmar pedido". É isso que elimina a antiga coluna "Aberto". */
 function derivarEstagioOperacional(
   statusAtendimento: StatusAtendimento,
-  pedidoAberto: { status: string } | null,
-  pedidoCanceladoMaisRecente: { status: string } | null,
+  pedidoAtivo: { status: StatusPedido } | null,
 ): EstagioOperacional {
-  if (pedidoAberto) return pedidoAberto.status as EstagioOperacional;
-  if (pedidoCanceladoMaisRecente) return "cancelado";
-  return statusAtendimento;
+  if (pedidoAtivo?.status === "em_preparacao") return "na_cozinha";
+  if (pedidoAtivo?.status === "pronto") return "pronto";
+  return estagioDeAtendimento(statusAtendimento);
 }
 
 function paraContexto(row: any): AtendimentoComContexto {
-  // Pedido arquivado (tarefa 0066) sai da visão ativa do board — nunca vira
-  // `pedido_aberto`/`pedido_estagio` nem participa da derivação do estágio.
-  const pedidosAtivos = (row.pedidos ?? []).filter((p: any) => !p.arquivado_em);
+  const pedidosNaoArquivados = (row.pedidos ?? []).filter((p: any) => !p.arquivado_em);
   const handoff_aberto = (row.handoffs ?? []).find((h: any) => h.status === "aberto") ?? null;
-  const pedido_aberto = pedidosAtivos.find((p: any) => p.status !== "cancelado") ?? null;
-  const pedidoCanceladoMaisRecente = pedido_aberto
-    ? null
-    : maisRecente<{ status: string; criado_em: string }>(pedidosAtivos.filter((p: any) => p.status === "cancelado"));
+  const pedido_aberto = pedidosNaoArquivados.find((p: any) => p.status !== "cancelado") ?? null;
+  const pedido_estagio: PedidoComResumo | null =
+    pedidosNaoArquivados.find((p: any) => STATUS_PEDIDO_ATIVO.includes(p.status)) ?? null;
+
+  if (pedido_estagio?.itens) {
+    pedido_estagio.itens = [...pedido_estagio.itens].sort((a, b) => a.ordem - b.ordem);
+  }
+
   return {
     ...row,
     cliente: row.cliente,
+    responsavel: row.responsavel ?? null,
     handoff_aberto,
     pedido_aberto,
-    pedido_estagio: pedido_aberto ?? pedidoCanceladoMaisRecente,
-    estagio_operacional: derivarEstagioOperacional(row.status, pedido_aberto, pedidoCanceladoMaisRecente),
+    pedido_estagio,
+    estagio_operacional: derivarEstagioOperacional(row.status, pedido_estagio),
   };
 }
 
@@ -179,7 +182,8 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
         `*,
          cliente:clientes(*),
          handoffs(*),
-         pedidos(*)`,
+         responsavel:usuarios(id, nome),
+         pedidos(*, itens:itens_pedido(nome_produto, quantidade, ordem))`,
       )
       .eq("empresa_id", empresaId)
       .order("ultima_mensagem_em", { ascending: false });
@@ -210,7 +214,8 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
         `*,
          cliente:clientes(*),
          handoffs(*),
-         pedidos(*)`,
+         responsavel:usuarios(id, nome),
+         pedidos(*, itens:itens_pedido(nome_produto, quantidade, ordem))`,
       )
       .eq("id", id)
       .eq("empresa_id", empresaId)
@@ -407,7 +412,11 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
 
     const { data, error } = await supabaseAdmin
       .from("atendimentos")
-      .update({ status: "humano_atendendo", responsavel_usuario_id: usuarioId })
+      .update({
+        status: "humano_atendendo",
+        responsavel_usuario_id: usuarioId,
+        assumido_em: new Date().toISOString(),
+      })
       .eq("id", id)
       .eq("empresa_id", empresaId)
       .neq("status", "resolvido")
@@ -436,7 +445,10 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
 
     const { data, error } = await supabaseAdmin
       .from("atendimentos")
-      .update({ status: "ia_atendendo" })
+      // Limpa responsável e cronômetro junto: um card na coluna 🤖 IA
+      // mostrando "👤 Fulano" seria exatamente a confusão entre status e
+      // responsável que o board novo existe pra desfazer.
+      .update({ status: "ia_atendendo", responsavel_usuario_id: null, assumido_em: null })
       .eq("id", id)
       .eq("empresa_id", empresaId)
       .neq("status", "ia_atendendo")

@@ -72,7 +72,11 @@ export async function handoffsRoutes(app: FastifyInstance): Promise<void> {
 
     await supabaseAdmin
       .from("atendimentos")
-      .update({ status: "humano_atendendo", responsavel_usuario_id: usuarioId })
+      .update({
+        status: "humano_atendendo",
+        responsavel_usuario_id: usuarioId,
+        assumido_em: new Date().toISOString(),
+      })
       .eq("id", handoff.atendimento_id)
       .eq("empresa_id", empresaId);
 

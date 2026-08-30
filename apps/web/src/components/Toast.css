@@ -1,0 +1,50 @@
+.toast-pilha {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  /* A pilha nunca intercepta clique — o feedback é informativo, o operador
+     continua trabalhando por baixo dele. */
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 15px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+  color: var(--text-1);
+  box-shadow: 0 6px 20px rgba(20, 15, 10, 0.16);
+}
+
+.toast-marca {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: white;
+}
+.toast-sucesso .toast-marca {
+  background: var(--success);
+}
+.toast-erro .toast-marca {
+  background: var(--red);
+}
+.toast-erro {
+  border-color: var(--red);
+}

@@ -1,21 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { AtendimentoComContexto, Mensagem } from "@prospect/shared";
+import type { AtendimentoComContexto, EstagioOperacional, Mensagem } from "@prospect/shared";
 import { api } from "../lib/api.js";
 import { supabase } from "../lib/supabase.js";
-import { KANBAN_COLUNAS, STATUS_META, tempoDecorrido } from "../components/statusMeta.js";
+import { KANBAN_COLUNAS } from "../components/statusMeta.js";
 import Topbar from "../components/Topbar.js";
+import ConfirmDialog from "../components/ConfirmDialog.js";
+import { useToast } from "../components/Toast.js";
+import ColunaKanban from "./kanban/ColunaKanban.js";
+import KanbanCard from "./kanban/KanbanCard.js";
+import ResumoOperacional from "./kanban/ResumoOperacional.js";
+import { mensagemDeErro, type AcaoKanban } from "./kanban/acoes.js";
 import "./Kanban.css";
-
-const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 // Quantas mensagens mais recentes aparecem no preview de hover do card.
 const PREVIEW_QTD_MENSAGENS = 4;
 // Espera antes de disparar a busca — evita disparar um fetch a cada card que
 // o mouse só "passa por cima" rapidamente indo pra outro lugar.
 const PREVIEW_DELAY_MS = 350;
+// Uma ação real (entregar, por exemplo) toca `pedidos` e `atendimentos`: sem
+// isso o realtime dispararia dois refetches completos do board seguidos.
+const REFETCH_DEBOUNCE_MS = 300;
 
 type EstadoPreview = { atendimentoId: string; rect: DOMRect } | null;
+type AcaoPendente = { atendimento: AtendimentoComContexto; acao: AcaoKanban } | null;
 
 /** Remetente → label/ícone curtos, mesmo mapeamento visual da tela de
  * Atendimento (msg-tag), só compacto pro popover. */
@@ -30,16 +38,20 @@ export default function Kanban() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const navigate = useNavigate();
+  const mostrarToast = useToast();
 
-  // Preview de hover — ver docs do pedido: mostrar as últimas mensagens
-  // sem precisar clicar pra abrir o atendimento. Cache por atendimento pra
-  // não refazer a busca toda vez que o mouse volta a passar pelo mesmo card.
+  const [acaoPendente, setAcaoPendente] = useState<AcaoPendente>(null);
+  const [executandoEm, setExecutandoEm] = useState<string | null>(null);
+
+  // Preview de hover — mostrar as últimas mensagens sem precisar clicar pra
+  // abrir o atendimento. Cache por atendimento pra não refazer a busca toda
+  // vez que o mouse volta a passar pelo mesmo card.
   const [preview, setPreview] = useState<EstadoPreview>(null);
   const [cachePreview, setCachePreview] = useState<Record<string, Mensagem[]>>({});
   const showTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function aoEntrarNoCard(atendimentoId: string, e: React.MouseEvent<HTMLButtonElement>) {
+  function aoEntrarNoCard(atendimentoId: string, e: React.MouseEvent<HTMLElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     if (showTimeout.current) clearTimeout(showTimeout.current);
     if (hideTimeout.current) clearTimeout(hideTimeout.current);
@@ -81,33 +93,64 @@ export default function Kanban() {
 
     // Realtime: qualquer mudança em atendimentos desta empresa recarrega o
     // Kanban — RLS garante que só chega evento da empresa do usuário logado.
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const recarregar = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(carregar, REFETCH_DEBOUNCE_MS);
+    };
+
     const channel = supabase
       .channel("atendimentos-kanban")
-      .on("postgres_changes", { event: "*", schema: "public", table: "atendimentos" }, () => {
-        carregar();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => {
-        carregar();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "atendimentos" }, recarregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, recarregar)
       .subscribe();
 
     return () => {
+      if (debounce) clearTimeout(debounce);
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const porColuna = useMemo(() => {
-    const grupos = new Map<string, AtendimentoComContexto[]>();
-    for (const status of KANBAN_COLUNAS) grupos.set(status, []);
+    const grupos = new Map<EstagioOperacional, AtendimentoComContexto[]>();
+    for (const estagio of KANBAN_COLUNAS) grupos.set(estagio, []);
     for (const a of atendimentos) grupos.get(a.estagio_operacional)?.push(a);
     return grupos;
   }, [atendimentos]);
 
-  async function aoArquivar(e: React.MouseEvent, pedidoId: string) {
-    e.stopPropagation();
-    await api.arquivarPedido(pedidoId);
-    carregar();
+  // Tick de 1s só quando existe cronômetro vivo na tela (espera ou
+  // atendimento em curso); nas outras colunas o tempo é grosso (min/h) e não
+  // justifica um re-render por segundo.
+  const precisaTick = useMemo(
+    () =>
+      atendimentos.some(
+        (a) => a.estagio_operacional === "aguardando_humano" || a.estagio_operacional === "em_atendimento",
+      ),
+    [atendimentos],
+  );
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    if (!precisaTick) return;
+    const id = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [precisaTick]);
+
+  async function confirmarAcao() {
+    if (!acaoPendente) return;
+    const { atendimento, acao } = acaoPendente;
+    setExecutandoEm(atendimento.id);
+    try {
+      await acao.executar(atendimento);
+      setAcaoPendente(null);
+      mostrarToast(acao.toast);
+      await carregar();
+    } catch (e) {
+      setAcaoPendente(null);
+      mostrarToast(mensagemDeErro(e), "erro");
+    } finally {
+      setExecutandoEm(null);
+    }
   }
 
   if (loading) {
@@ -127,84 +170,41 @@ export default function Kanban() {
           <p className="page-title">Atendimentos</p>
           <p className="page-sub">{atendimentos.length} conversas ativas</p>
         </div>
-        <div className="filters">
-          <div className="chip active">
-            Todos <span className="chip-count">{atendimentos.length}</span>
-          </div>
-          {KANBAN_COLUNAS.map((status) => (
-            <div className="chip" key={status}>
-              {STATUS_META[status].label}{" "}
-              <span className="chip-count">{porColuna.get(status)?.length ?? 0}</span>
-            </div>
-          ))}
-        </div>
+        <ResumoOperacional porColuna={porColuna} />
       </div>
 
       <div className="board">
-        {KANBAN_COLUNAS.map((status) => {
-          const meta = STATUS_META[status];
-          const itens = porColuna.get(status) ?? [];
+        {KANBAN_COLUNAS.map((estagio) => {
+          const itens = porColuna.get(estagio) ?? [];
           return (
-            <div className="col" key={status}>
-              <div className="col-head">
-                <div className="col-dot" style={{ background: meta.accentVar }} />
-                <div className="col-title">{meta.label}</div>
-                <div className="col-count">{itens.length}</div>
-              </div>
-              <div className="col-body">
-                {itens.map((a) => {
-                  const arquivavel = (status === "cancelado" || status === "entregue") && a.pedido_estagio;
-                  return (
-                    <button
-                      key={a.id}
-                      className={`card${status === "cancelado" ? " card-cancelado" : ""}`}
-                      style={
-                        {
-                          "--accent": meta.accentVar,
-                          "--accent-bg": meta.accentBgVar,
-                        } as React.CSSProperties
-                      }
-                      onClick={() => navigate(`/atendimentos/${a.id}`)}
-                      onMouseEnter={(e) => aoEntrarNoCard(a.id, e)}
-                      onMouseLeave={aoSairDoCard}
-                    >
-                      <div className="card-top">
-                        <div className="card-owner">
-                          <div className="owner-icon">{meta.icon}</div>
-                          <div className="card-name">{a.cliente?.nome ?? a.cliente?.telefone}</div>
-                        </div>
-                        {status === "cancelado" && <span className="badge-cancelado">Cancelado</span>}
-                      </div>
-                      {a.intencao && <div className="intent-pill">{a.intencao}</div>}
-                      {a.handoff_aberto && status === "solicitou_humano" && (
-                        <div className="handoff-note">
-                          {meta.icon}
-                          <span>
-                            {a.handoff_aberto.origem === "cliente_solicitou" ? "Cliente pediu" : "IA solicitou"} —{" "}
-                            {a.handoff_aberto.motivo}
-                          </span>
-                        </div>
-                      )}
-                      <div className="card-bottom">
-                        <div className="card-value">
-                          {a.pedido_estagio ? currency.format(a.pedido_estagio.total) : "—"}
-                        </div>
-                        <div className="card-meta">{tempoDecorrido(a.ultima_mensagem_em)}</div>
-                      </div>
-                      {arquivavel && (
-                        <button className="btn-arquivar" onClick={(e) => aoArquivar(e, a.pedido_estagio!.id)}>
-                          Arquivar
-                        </button>
-                      )}
-                    </button>
-                  );
-                })}
-                {itens.length === 0 && <div className="empty-state">Nenhum atendimento</div>}
-              </div>
-            </div>
+            <ColunaKanban estagio={estagio} total={itens.length} key={estagio}>
+              {itens.map((a) => (
+                <KanbanCard
+                  key={a.id}
+                  atendimento={a}
+                  agora={agora}
+                  emExecucao={executandoEm === a.id}
+                  onAbrir={() => navigate(`/atendimentos/${a.id}`)}
+                  onAcao={(acao) => setAcaoPendente({ atendimento: a, acao })}
+                  onEntrarNoCard={(e) => aoEntrarNoCard(a.id, e)}
+                  onSairDoCard={aoSairDoCard}
+                />
+              ))}
+              {itens.length === 0 && <div className="empty-state">Nenhum atendimento</div>}
+            </ColunaKanban>
           );
         })}
       </div>
+
+      {acaoPendente && (
+        <ConfirmDialog
+          {...acaoPendente.acao.confirmacao}
+          destrutivo={acaoPendente.acao.destrutivo}
+          emExecucao={executandoEm === acaoPendente.atendimento.id}
+          onConfirmar={confirmarAcao}
+          onCancelar={() => setAcaoPendente(null)}
+        />
+      )}
 
       {preview && (() => {
         const POPOVER_W = 300;

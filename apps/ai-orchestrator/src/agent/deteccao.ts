@@ -25,7 +25,8 @@ export function clientePediuHumano(texto: string): boolean {
  * bug original (afirmar ser humano). Nenhuma etapa de redação entra aqui.
  */
 export function mensagemDeTransferencia(usaEmoji: boolean): string {
-  const base = "Claro! Vou te transferir para um atendente humano agora — já aviso a equipe e alguém te retorna por aqui.";
+  const base =
+    "Claro! Vou te transferir para um atendente humano agora — já aviso a equipe e alguém te retorna por aqui.";
   return usaEmoji ? `${base} 🙋` : base;
 }
 
@@ -63,7 +64,7 @@ export function pedeTempoReal(texto: string): boolean {
  */
 export function mensagemSemTempoReal(usaEmoji: boolean): string {
   const base =
-    "Não consigo consultar a hora ou a data atual em tempo real. Mas posso ajudar com o cardápio, horário de funcionamento e pedidos — no que posso te ajudar?";
+    "Não consigo consultar a hora ou a data atual em tempo real. Mas posso ajudar com o cardápio e pedidos — no que posso te ajudar?";
   return usaEmoji ? `${base} 🙂` : base;
 }
 
@@ -156,10 +157,14 @@ export function negaResumoPendente(texto: string): boolean {
  * texto genérico honesto em vez de inventar um nome (CLAUDE.md regra 1
  * vale pra identidade tanto quanto pra dado comercial).
  */
-export function mensagemDeIdentidade(nomeAssistente: string | null, usaEmoji: boolean): string {
+export function mensagemDeIdentidade(
+  nomeAssistente: string | null,
+  usaEmoji: boolean,
+): string {
   const base = nomeAssistente
     ? `Sou o(a) ${nomeAssistente}, um assistente virtual (inteligência artificial) que atende por aqui.`
     : "Sou um assistente virtual (inteligência artificial) que atende por aqui.";
-  const complemento = " Se preferir, posso te transferir pra um atendente humano — é só pedir.";
+  const complemento =
+    " Se preferir, posso te transferir pra um atendente humano — é só pedir.";
   return usaEmoji ? `${base}${complemento} 🤖` : `${base}${complemento}`;
 }

@@ -163,6 +163,69 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // Finalizar entrega — transição COMPOSTA (pedido entregue + atendimento
+  // encerrado), por isso é uma rota só e não duas chamadas encadeadas pelo
+  // painel: quem tem autoridade sobre estado transacional é o backend
+  // (CLAUDE.md regra 9). Encerrar o atendimento junto é o que tira o card do
+  // Kanban de vez; se o cliente voltar a escrever, o ingest do worker abre um
+  // atendimento novo em `ia_atendendo` sozinho.
+  app.post<{ Params: { id: string } }>("/pedidos/:id/entregar", async (request, reply) => {
+    const { empresaId } = request.auth!;
+    const { id } = request.params;
+
+    const { data: pedido } = await supabaseAdmin
+      .from("pedidos")
+      .select("status, atendimento_id")
+      .eq("id", id)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    if (!pedido) return reply.code(404).send({ error: "pedido_nao_encontrado" });
+
+    if (!TRANSICOES[pedido.status as StatusPedido]?.includes("entregue")) {
+      return reply.code(400).send({ error: "transicao_de_status_nao_permitida" });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("pedidos")
+      .update({ status: "entregue" })
+      .eq("id", id)
+      .eq("empresa_id", empresaId)
+      .select()
+      .single();
+
+    if (error) {
+      request.log.error(error);
+      return reply.code(500).send({ error: "erro_ao_entregar_pedido" });
+    }
+
+    if (pedido.atendimento_id) {
+      // Handoff pendente bloquearia o `resolvido` (ver
+      // `handoff_pendente_impede_finalizar` em atendimentos.ts) — e, com o
+      // pedido entregue, o motivo que gerou o handoff já se encerrou. Mesmo
+      // tratamento que `/atendimentos/:id/devolver-ia` dá.
+      const { error: handoffError } = await supabaseAdmin
+        .from("handoffs")
+        .update({ status: "resolvido", resolvido_em: new Date().toISOString() })
+        .eq("atendimento_id", pedido.atendimento_id)
+        .eq("empresa_id", empresaId)
+        .in("status", ["aberto", "assumido"]);
+      if (handoffError) request.log.error(handoffError);
+
+      const { error: atendimentoError } = await supabaseAdmin
+        .from("atendimentos")
+        .update({ status: "resolvido" })
+        .eq("id", pedido.atendimento_id)
+        .eq("empresa_id", empresaId)
+        .neq("status", "resolvido");
+      // A entrega em si já está persistida; se encerrar a conversa falhar, o
+      // card volta pra coluna de conversa em vez de sumir — estado visível e
+      // corrigível na mão, melhor que reverter uma entrega que aconteceu.
+      if (atendimentoError) request.log.error(atendimentoError);
+    }
+
+    return data;
+  });
+
   // Arquivar (tarefa 0066) — sai da visão ativa do board unificado sem
   // mexer em `status` (fonte de verdade própria, consumida por outras
   // rotas isoladamente); só permitido em pedidos que já saíram do fluxo

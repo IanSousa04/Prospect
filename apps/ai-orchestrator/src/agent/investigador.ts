@@ -1,8 +1,20 @@
 import type { NomeFerramenta, ComportamentoJson } from "@prospect/shared";
 import { getChatModel } from "../llm/client.js";
-import type { ChatMessage, ChatModel, ToolDefinitionForLlm } from "../llm/types.js";
-import { executeTool, getToolDefinitionsForLlm, type ToolContext } from "../tools/index.js";
-import type { Afirmacao, RelatorioInvestigacao, TipoAfirmacao } from "./types.js";
+import type {
+  ChatMessage,
+  ChatModel,
+  ToolDefinitionForLlm,
+} from "../llm/types.js";
+import {
+  executeTool,
+  getToolDefinitionsForLlm,
+  type ToolContext,
+} from "../tools/index.js";
+import type {
+  Afirmacao,
+  RelatorioInvestigacao,
+  TipoAfirmacao,
+} from "./types.js";
 import { computeConfianca, afirmacoesComerciaisSemFonte } from "./confianca.js";
 import { carregarPedidoEmConstrucao } from "./sessao.js";
 import { afirmaPedidoConfirmado } from "./verificacao.js";
@@ -23,7 +35,11 @@ const TIPOS_AFIRMACAO_VALIDOS: ReadonlySet<TipoAfirmacao> = new Set([
   "politica",
   "generico",
 ]);
-const TIPOS_AMBIGUIDADE_VALIDOS = new Set(["nenhuma", "multiplos_candidatos", "informacao_insuficiente"]);
+const TIPOS_AMBIGUIDADE_VALIDOS = new Set([
+  "nenhuma",
+  "multiplos_candidatos",
+  "informacao_insuficiente",
+]);
 
 /**
  * Regra 10, dinâmica — reflete `ia_configuracoes.comportamento_json` (ver
@@ -37,13 +53,19 @@ const TIPOS_AMBIGUIDADE_VALIDOS = new Set(["nenhuma", "multiplos_candidatos", "i
 function regraComportamento(c: ComportamentoJson): string {
   const proibicoes: string[] = [];
   if (c.fazer_recomendacoes === false) {
-    proibicoes.push('nunca chame "buscar_recomendacoes" por conta própria — só se o cliente pedir sugestão explicitamente');
+    proibicoes.push(
+      'nunca chame "buscar_recomendacoes" por conta própria — só se o cliente pedir sugestão explicitamente',
+    );
   }
   if (c.oferecer_adicionais === false) {
-    proibicoes.push('nunca chame "buscar_adicionais" por conta própria pra sugerir adicionais — só se o cliente perguntar sobre isso');
+    proibicoes.push(
+      'nunca chame "buscar_adicionais" por conta própria pra sugerir adicionais — só se o cliente perguntar sobre isso',
+    );
   }
   if (c.oferecer_combos === false) {
-    proibicoes.push('nunca chame "buscar_combos" por conta própria pra sugerir combo — só se o cliente perguntar sobre isso');
+    proibicoes.push(
+      'nunca chame "buscar_combos" por conta própria pra sugerir combo — só se o cliente perguntar sobre isso',
+    );
   }
   if (proibicoes.length === 0) return "";
   return `\n13. Esta empresa configurou restrições de comportamento comercial — respeite exatamente: ${proibicoes.join("; ")}.`;
@@ -93,14 +115,21 @@ export interface ResultadoInvestigacao {
  * `{erro: "..._nao_encontrado"}`. Puramente estrutural, nunca precisa saber
  * o nome da ferramenta — cobre ferramentas novas automaticamente.
  */
-const CAMPOS_LISTA_VAZIA = ["resultados", "grupos", "recomendacoes", "pedidos"] as const;
+const CAMPOS_LISTA_VAZIA = [
+  "resultados",
+  "grupos",
+  "recomendacoes",
+  "pedidos",
+] as const;
 
 function evidenciaEhVazia(output: unknown): boolean {
   if (!output || typeof output !== "object") return false;
   const obj = output as Record<string, unknown>;
-  if (typeof obj.erro === "string" && obj.erro.endsWith("_nao_encontrado")) return true;
+  if (typeof obj.erro === "string" && obj.erro.endsWith("_nao_encontrado"))
+    return true;
   for (const campo of CAMPOS_LISTA_VAZIA) {
-    if (campo in obj && Array.isArray(obj[campo])) return obj[campo].length === 0;
+    if (campo in obj && Array.isArray(obj[campo]))
+      return obj[campo].length === 0;
   }
   return false;
 }
@@ -117,7 +146,8 @@ const FRASE_RESULTADO_VAZIO: Partial<Record<NomeFerramenta, string>> = {
   buscar_recomendacoes: "Não há recomendações cadastradas para este produto.",
   buscar_opcoes: "Este produto não tem grupos de personalização cadastrados.",
   buscar_adicionais: "Este produto não tem adicionais cadastrados.",
-  buscar_conhecimento: "Não foi encontrada nenhuma informação cadastrada sobre isso.",
+  buscar_conhecimento:
+    "Não foi encontrada nenhuma informação cadastrada sobre isso.",
   consultar_horario: "Não há horário de funcionamento cadastrado.",
   consultar_taxa: "Não há regras de taxa de entrega cadastradas.",
   consultar_regiao: "Não há regiões de entrega cadastradas.",
@@ -139,9 +169,10 @@ export function sintetizarAfirmacoesDeResultadoVazio(
   relatorio: RelatorioInvestigacao,
   evidencias: EvidenciaColetada[],
 ): RelatorioInvestigacao {
-
   const evidenciasVaziasPorId = new Map(
-    evidencias.filter((e) => evidenciaEhVazia(e.output)).map((e) => [e.execucaoId, e]),
+    evidencias
+      .filter((e) => evidenciaEhVazia(e.output))
+      .map((e) => [e.execucaoId, e]),
   );
   if (evidenciasVaziasPorId.size === 0) return relatorio;
 
@@ -151,11 +182,15 @@ export function sintetizarAfirmacoesDeResultadoVazio(
   // substitui pela frase determinística limpa da mesma execução real.
   if (relatorio.afirmacoes.length > 0) {
     const afirmacoesCorrigidas = relatorio.afirmacoes.map((a) => {
-      const evidenciaVazia = a.fonte_tool_execucao_id ? evidenciasVaziasPorId.get(a.fonte_tool_execucao_id) : undefined;
+      const evidenciaVazia = a.fonte_tool_execucao_id
+        ? evidenciasVaziasPorId.get(a.fonte_tool_execucao_id)
+        : undefined;
       if (!evidenciaVazia) return a;
       return {
         ...a,
-        texto: FRASE_RESULTADO_VAZIO[evidenciaVazia.toolNome as NomeFerramenta] ?? "A busca não encontrou nenhum resultado.",
+        texto:
+          FRASE_RESULTADO_VAZIO[evidenciaVazia.toolNome as NomeFerramenta] ??
+          "A busca não encontrou nenhum resultado.",
       };
     });
     return { ...relatorio, afirmacoes: afirmacoesCorrigidas };
@@ -163,8 +198,12 @@ export function sintetizarAfirmacoesDeResultadoVazio(
 
   if (relatorio.ambiguidade.tipo !== "nenhuma") return relatorio;
 
-  const afirmacoesSinteticas: Afirmacao[] = [...evidenciasVaziasPorId.values()].map((e) => ({
-    texto: FRASE_RESULTADO_VAZIO[e.toolNome as NomeFerramenta] ?? "A busca não encontrou nenhum resultado.",
+  const afirmacoesSinteticas: Afirmacao[] = [
+    ...evidenciasVaziasPorId.values(),
+  ].map((e) => ({
+    texto:
+      FRASE_RESULTADO_VAZIO[e.toolNome as NomeFerramenta] ??
+      "A busca não encontrou nenhum resultado.",
     tipo: "generico",
     fonte_tool: e.toolNome,
     fonte_tool_execucao_id: e.execucaoId,
@@ -188,11 +227,16 @@ export function sintetizarAfirmacoesDeResultadoVazio(
  * ambiguidade: se depois de filtrar não sobrar nada, o backstop assume e
  * vira `pedir_esclarecimento`, nunca mais handoff mudo por causa disso.
  */
-export function filtrarAfirmacoesComerciaisSemFonte(relatorio: RelatorioInvestigacao): RelatorioInvestigacao {
+export function filtrarAfirmacoesComerciaisSemFonte(
+  relatorio: RelatorioInvestigacao,
+): RelatorioInvestigacao {
   const semFonte = new Set(afirmacoesComerciaisSemFonte(relatorio));
   if (semFonte.size === 0) return relatorio;
 
-  return { ...relatorio, afirmacoes: relatorio.afirmacoes.filter((a) => !semFonte.has(a)) };
+  return {
+    ...relatorio,
+    afirmacoes: relatorio.afirmacoes.filter((a) => !semFonte.has(a)),
+  };
 }
 
 /**
@@ -213,7 +257,6 @@ export function filtrarAfirmacoesDeConfirmacaoSemFonte(
   relatorio: RelatorioInvestigacao,
   evidencias: EvidenciaColetada[],
 ): RelatorioInvestigacao {
-
   const pedidoCriadoDeVerdade = new Set(
     evidencias
       .filter(
@@ -228,12 +271,18 @@ export function filtrarAfirmacoesDeConfirmacaoSemFonte(
 
   const semFonteReal = new Set(
     relatorio.afirmacoes.filter(
-      (a) => afirmaPedidoConfirmado(a.texto) && (!a.fonte_tool_execucao_id || !pedidoCriadoDeVerdade.has(a.fonte_tool_execucao_id)),
+      (a) =>
+        afirmaPedidoConfirmado(a.texto) &&
+        (!a.fonte_tool_execucao_id ||
+          !pedidoCriadoDeVerdade.has(a.fonte_tool_execucao_id)),
     ),
   );
   if (semFonteReal.size === 0) return relatorio;
 
-  return { ...relatorio, afirmacoes: relatorio.afirmacoes.filter((a) => !semFonteReal.has(a)) };
+  return {
+    ...relatorio,
+    afirmacoes: relatorio.afirmacoes.filter((a) => !semFonteReal.has(a)),
+  };
 }
 
 /**
@@ -247,12 +296,17 @@ export function filtrarAfirmacoesDeConfirmacaoSemFonte(
  * por uma das redes acima — abandonando o cliente sem resposta nenhuma.
  * Forçar ambiguidade aqui garante que `decidir()` (que checa ambiguidade
  * ANTES de confiança) sempre prefira perguntar ao cliente em vez de sumir. */
-export function garantirAmbiguidadeQuandoSemFatoNemSinal(relatorio: RelatorioInvestigacao): RelatorioInvestigacao {
+export function garantirAmbiguidadeQuandoSemFatoNemSinal(
+  relatorio: RelatorioInvestigacao,
+): RelatorioInvestigacao {
   if (relatorio.afirmacoes.length > 0) return relatorio;
   if (relatorio.ambiguidade.tipo !== "nenhuma") return relatorio;
   if (relatorio.ferramentasChamadas === 0) return relatorio;
 
-  return { ...relatorio, ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] } };
+  return {
+    ...relatorio,
+    ambiguidade: { tipo: "informacao_insuficiente", opcoes: [] },
+  };
 }
 
 /** Ferramentas de ITEM de carrinho que o Investigador ainda pode chamar e
@@ -300,8 +354,13 @@ export function sintetizarAfirmacaoDeMutacaoCarrinho(
     );
   if (!ultimaMutacao) return relatorio;
 
-  const output = ultimaMutacao.output as { itens: Array<{ nome_produto: string; quantidade: number }>; subtotal: number };
-  const resumoItens = output.itens.map((i) => `${i.quantidade}x ${i.nome_produto}`).join(", ") || "nenhum item (carrinho ficou vazio)";
+  const output = ultimaMutacao.output as {
+    itens: Array<{ nome_produto: string; quantidade: number }>;
+    subtotal: number;
+  };
+  const resumoItens =
+    output.itens.map((i) => `${i.quantidade}x ${i.nome_produto}`).join(", ") ||
+    "nenhum item (carrinho ficou vazio)";
 
   return {
     ...relatorio,
@@ -322,9 +381,15 @@ function truncar(valor: unknown, max = 800): string {
   return texto.length > max ? `${texto.slice(0, max)}…` : texto;
 }
 
-function montarPromptRelatorio(pergunta: string, evidencias: EvidenciaColetada[]): string {
+function montarPromptRelatorio(
+  pergunta: string,
+  evidencias: EvidenciaColetada[],
+): string {
   const listaEvidencias = evidencias
-    .map((e) => `- id="${e.execucaoId}" ferramenta="${e.toolNome}" resultado=${truncar(e.output)}`)
+    .map(
+      (e) =>
+        `- id="${e.execucaoId}" ferramenta="${e.toolNome}" resultado=${truncar(e.output)}`,
+    )
     .join("\n");
 
   return `Com base SOMENTE nas evidências abaixo (nunca invente nada fora delas), produza um objeto JSON com exatamente este formato:
@@ -334,7 +399,7 @@ function montarPromptRelatorio(pergunta: string, evidencias: EvidenciaColetada[]
 Regras obrigatórias:
 - Toda afirmação de tipo preco/disponibilidade/promocao/taxa/horario PRECISA citar um "fonte_tool_execucao_id" que exista EXATAMENTE (caractere por caractere) na lista de evidências abaixo. Nunca invente um id.
 - Se as evidências não bastam pra responder com certeza, ou se há mais de uma opção plausível (ex.: dois produtos parecidos), defina "ambiguidade.tipo" adequadamente e liste até 3 opções em "ambiguidade.opcoes" — e nesse caso não afirme nada arriscado.
-- O campo "texto" de cada afirmação deve soar como uma nota factual natural em português, do jeito que um atendente humano anotaria pra si mesmo — NUNCA como uma mensagem de sistema, log ou motor de busca (nunca escreva algo como "não encontrada nos resultados", "indisponível ou não cadastrado", "sem resultados para a query"). Se o resultado foi negativo, descreva o fato direto (ex.: "Não há pizza de calabresa no cardápio").
+- O campo "texto" de cada afirmação deve soar como uma nota factual natural em português, do jeito que um atendente humano anotaria pra si mesmo — NUNCA como uma mensagem de sistema, log ou motor de busca (nunca escreva algo como "não encontrada nos resultados", "indisponível ou não cadastrado", "sem resultados para a query"). Se o resultado foi negativo, descreva o fato direto (ex.: "Não há o item no cardápio").
 - Responda APENAS o JSON, sem markdown, sem texto antes ou depois.
 
 Pergunta do cliente: "${pergunta}"
@@ -347,7 +412,11 @@ function relatorioVazio(
   ferramentasChamadas: number,
   tipoAmbiguidade: RelatorioInvestigacao["ambiguidade"]["tipo"] = "informacao_insuficiente",
 ): RelatorioInvestigacao {
-  return { afirmacoes: [], ambiguidade: { tipo: tipoAmbiguidade }, ferramentasChamadas };
+  return {
+    afirmacoes: [],
+    ambiguidade: { tipo: tipoAmbiguidade },
+    ferramentasChamadas,
+  };
 }
 
 function parseRelatorio(
@@ -363,22 +432,30 @@ function parseRelatorio(
   } catch {
     return relatorioVazio(tentativasFerramentas);
   }
-  if (!bruto || typeof bruto !== "object") return relatorioVazio(tentativasFerramentas);
+  if (!bruto || typeof bruto !== "object")
+    return relatorioVazio(tentativasFerramentas);
 
   const idsValidos = new Map(evidencias.map((e) => [e.execucaoId, e.toolNome]));
   const objeto = bruto as Record<string, unknown>;
 
-  const afirmacoesBrutas = Array.isArray(objeto.afirmacoes) ? objeto.afirmacoes : [];
+  const afirmacoesBrutas = Array.isArray(objeto.afirmacoes)
+    ? objeto.afirmacoes
+    : [];
   const afirmacoes: Afirmacao[] = afirmacoesBrutas
     .filter(
       (a): a is Record<string, unknown> =>
         !!a &&
         typeof a === "object" &&
         typeof (a as Record<string, unknown>).texto === "string" &&
-        TIPOS_AFIRMACAO_VALIDOS.has((a as Record<string, unknown>).tipo as TipoAfirmacao),
+        TIPOS_AFIRMACAO_VALIDOS.has(
+          (a as Record<string, unknown>).tipo as TipoAfirmacao,
+        ),
     )
     .map((a) => {
-      const idCitado = typeof a.fonte_tool_execucao_id === "string" ? a.fonte_tool_execucao_id : null;
+      const idCitado =
+        typeof a.fonte_tool_execucao_id === "string"
+          ? a.fonte_tool_execucao_id
+          : null;
       // Nunca confia na palavra do modelo: o id só é aceito se existir de
       // verdade na lista de evidências que nós mesmos coletamos.
       const idValido = idCitado !== null && idsValidos.has(idCitado);
@@ -390,12 +467,18 @@ function parseRelatorio(
       };
     });
 
-  const ambiguidadeBruta = objeto.ambiguidade as Record<string, unknown> | undefined;
-  const tipoAmbiguidade = TIPOS_AMBIGUIDADE_VALIDOS.has(ambiguidadeBruta?.tipo as string)
+  const ambiguidadeBruta = objeto.ambiguidade as
+    | Record<string, unknown>
+    | undefined;
+  const tipoAmbiguidade = TIPOS_AMBIGUIDADE_VALIDOS.has(
+    ambiguidadeBruta?.tipo as string,
+  )
     ? (ambiguidadeBruta!.tipo as RelatorioInvestigacao["ambiguidade"]["tipo"])
     : "nenhuma";
   const opcoes = Array.isArray(ambiguidadeBruta?.opcoes)
-    ? (ambiguidadeBruta!.opcoes as unknown[]).filter((o): o is string => typeof o === "string").slice(0, 3)
+    ? (ambiguidadeBruta!.opcoes as unknown[])
+        .filter((o): o is string => typeof o === "string")
+        .slice(0, 3)
     : undefined;
 
   return {
@@ -423,13 +506,20 @@ async function rodarFerramentas(
   let tentativas = 0;
 
   for (let iteracao = 0; iteracao < maxIteracoes; iteracao++) {
-    const resultado = await chat.chatCompletion(messages, { tools, temperature: 0.1 });
+    const resultado = await chat.chatCompletion(messages, {
+      tools,
+      temperature: 0.1,
+    });
 
     if (!resultado.toolCalls || resultado.toolCalls.length === 0) {
       break;
     }
 
-    messages.push({ role: "assistant", content: resultado.content ?? "", toolCalls: resultado.toolCalls });
+    messages.push({
+      role: "assistant",
+      content: resultado.content ?? "",
+      toolCalls: resultado.toolCalls,
+    });
 
     const execucoes = await Promise.all(
       resultado.toolCalls.map(async (tc) => {
@@ -447,12 +537,18 @@ async function rodarFerramentas(
     tentativas += execucoes.length;
     for (const { tc, exec } of execucoes) {
       if (exec.sucesso && exec.execucaoId) {
-        evidencias.push({ execucaoId: exec.execucaoId, toolNome: tc.nome, output: exec.output });
+        evidencias.push({
+          execucaoId: exec.execucaoId,
+          toolNome: tc.nome,
+          output: exec.output,
+        });
       }
       messages.push({
         role: "tool",
         toolCallId: tc.id,
-        content: JSON.stringify(exec.sucesso ? exec.output : { erro: exec.erro }),
+        content: JSON.stringify(
+          exec.sucesso ? exec.output : { erro: exec.erro },
+        ),
       });
     }
   }
@@ -470,7 +566,11 @@ async function gerarRelatorio(
     [{ role: "system", content: montarPromptRelatorio(pergunta, evidencias) }],
     { jsonMode: true, temperature: 0 },
   );
-  const relatorioBruto = parseRelatorio(respostaFinal.content, evidencias, tentativasFerramentas);
+  const relatorioBruto = parseRelatorio(
+    respostaFinal.content,
+    evidencias,
+    tentativasFerramentas,
+  );
   // Ordem importa, do mais crítico pro menos crítico: mutação de carrinho
   // nunca pode ficar escondida atrás de uma ambiguidade que o próprio
   // modelo criou depois de já ter agido, depois resultado vazio — cada uma
@@ -483,10 +583,21 @@ async function gerarRelatorio(
   // chamável pelo LLM, e os mesmos fatos agora chegam ao Atendente pelo
   // caminho determinístico (agent/checkout/fatos.ts), com evidência real e
   // sem depender de o modelo relatar corretamente.
-  const relatorioComCarrinho = sintetizarAfirmacaoDeMutacaoCarrinho(relatorioBruto, evidencias);
-  const relatorioComVazio = sintetizarAfirmacoesDeResultadoVazio(relatorioComCarrinho, evidencias);
-  const relatorioSemConfirmacaoFalsa = filtrarAfirmacoesDeConfirmacaoSemFonte(relatorioComVazio, evidencias);
-  const relatorioFiltrado = filtrarAfirmacoesComerciaisSemFonte(relatorioSemConfirmacaoFalsa);
+  const relatorioComCarrinho = sintetizarAfirmacaoDeMutacaoCarrinho(
+    relatorioBruto,
+    evidencias,
+  );
+  const relatorioComVazio = sintetizarAfirmacoesDeResultadoVazio(
+    relatorioComCarrinho,
+    evidencias,
+  );
+  const relatorioSemConfirmacaoFalsa = filtrarAfirmacoesDeConfirmacaoSemFonte(
+    relatorioComVazio,
+    evidencias,
+  );
+  const relatorioFiltrado = filtrarAfirmacoesComerciaisSemFonte(
+    relatorioSemConfirmacaoFalsa,
+  );
   return garantirAmbiguidadeQuandoSemFatoNemSinal(relatorioFiltrado);
 }
 
@@ -517,11 +628,17 @@ export async function investigar(
   // (persona "simpático"): o Investigador resumiu o carrinho reaproveitando
   // preços de rodadas anteriores em vez de rechamar "consultar_carrinho".
   const pedidoAtual = await carregarPedidoEmConstrucao(ctx);
-  const jaTemCarrinhoFresco = evidencias.some((e) => e.toolNome === "consultar_carrinho");
+  const jaTemCarrinhoFresco = evidencias.some(
+    (e) => e.toolNome === "consultar_carrinho",
+  );
   if (pedidoAtual.itens.length > 0 && !jaTemCarrinhoFresco) {
     const seed = await executeTool("consultar_carrinho", {}, ctx);
     if (seed.sucesso && seed.execucaoId) {
-      evidencias.push({ execucaoId: seed.execucaoId, toolNome: "consultar_carrinho", output: seed.output });
+      evidencias.push({
+        execucaoId: seed.execucaoId,
+        toolNome: "consultar_carrinho",
+        output: seed.output,
+      });
     }
   }
 
@@ -533,14 +650,28 @@ export async function investigar(
 
   const messages: ChatMessage[] = [
     { role: "system", content: montarPromptInvestigador(comportamento) },
-    ...(contextoSessao ? [{ role: "system" as const, content: contextoSessao }] : []),
+    ...(contextoSessao
+      ? [{ role: "system" as const, content: contextoSessao }]
+      : []),
     ...historico,
     { role: "user", content: pergunta },
   ];
 
-  let tentativasFerramentas = await rodarFerramentas(chat, tools, messages, evidencias, ctx, MAX_ITERACOES);
+  let tentativasFerramentas = await rodarFerramentas(
+    chat,
+    tools,
+    messages,
+    evidencias,
+    ctx,
+    MAX_ITERACOES,
+  );
 
-  let relatorio = await gerarRelatorio(chat, pergunta, evidencias, tentativasFerramentas);
+  let relatorio = await gerarRelatorio(
+    chat,
+    pergunta,
+    evidencias,
+    tentativasFerramentas,
+  );
 
   // Retry determinístico pro veto de fonte comercial (regra 1): em vez de
   // aceitar de cara "afirmação sem fonte → confiança baixa → handoff
@@ -550,12 +681,17 @@ export async function investigar(
   // ferramenta antes de finalizar — mesmo padrão já usado abaixo pra
   // confiança "média".
   const semFonteAntesDaRetentativa = afirmacoesComerciaisSemFonte(relatorio);
-  if (semFonteAntesDaRetentativa.length > 0 && relatorio.ambiguidade.tipo === "nenhuma") {
+  if (
+    semFonteAntesDaRetentativa.length > 0 &&
+    relatorio.ambiguidade.tipo === "nenhuma"
+  ) {
     messages.push({
       role: "user",
       content: `As seguintes afirmações não citam uma ferramenta chamada NESTA rodada, então não podem ser usadas como estão: ${semFonteAntesDaRetentativa
         .map((a) => `"${a.texto}"`)
-        .join("; ")}. Chame agora a ferramenta certa pra confirmar cada uma com evidência fresca — nunca reaproveite um valor de rodadas anteriores da conversa. Se genuinamente não for possível confirmar, não afirme nada sobre isso.`,
+        .join(
+          "; ",
+        )}. Chame agora a ferramenta certa pra confirmar cada uma com evidência fresca — nunca reaproveite um valor de rodadas anteriores da conversa. Se genuinamente não for possível confirmar, não afirme nada sobre isso.`,
     });
     tentativasFerramentas += await rodarFerramentas(
       chat,
@@ -565,7 +701,12 @@ export async function investigar(
       ctx,
       MAX_ITERACOES_CONFIRMACAO,
     );
-    relatorio = await gerarRelatorio(chat, pergunta, evidencias, tentativasFerramentas);
+    relatorio = await gerarRelatorio(
+      chat,
+      pergunta,
+      evidencias,
+      tentativasFerramentas,
+    );
   }
 
   // Confiança média → investigar mais (docs/product/05-ia-conhecimento.md
@@ -590,7 +731,12 @@ export async function investigar(
       ctx,
       MAX_ITERACOES_CONFIRMACAO,
     );
-    relatorio = await gerarRelatorio(chat, pergunta, evidencias, tentativasFerramentas);
+    relatorio = await gerarRelatorio(
+      chat,
+      pergunta,
+      evidencias,
+      tentativasFerramentas,
+    );
   }
 
   return { relatorio, evidencias };

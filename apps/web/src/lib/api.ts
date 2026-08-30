@@ -255,6 +255,14 @@ export const api = {
     return res.json();
   },
 
+  /** Transição composta (pedido entregue + atendimento encerrado) resolvida
+   * inteira no backend — o painel nunca encadeia duas mudanças de estado
+   * transacional por conta própria (CLAUDE.md regra 9). */
+  async entregarPedido(id: string): Promise<Pedido> {
+    const res = await authedFetch(`/pedidos/${id}/entregar`, { method: "POST" });
+    return res.json();
+  },
+
   async arquivarPedido(id: string): Promise<Pedido> {
     const res = await authedFetch(`/pedidos/${id}/arquivar`, { method: "POST" });
     return res.json();

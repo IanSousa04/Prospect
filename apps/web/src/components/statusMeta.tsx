@@ -30,13 +30,6 @@ const IconAlert = (
   </svg>
 );
 
-const IconUserAlert = (
-  <svg {...iconProps}>
-    <circle cx="12" cy="8" r="4" />
-    <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
-    <path d="M19 8h.01" />
-  </svg>
-);
 
 const IconHeadset = (
   <svg {...iconProps}>
@@ -86,10 +79,18 @@ const IconX = (
   </svg>
 );
 
-/** Única fonte de verdade de cor/ícone/label por estágio do board unificado
- * (tarefa 0067) — usada no Kanban e na tela de atendimento, pra garantir
- * que o mesmo estágio pareça igual em todo lugar (ver
- * docs/product/07-ux-multitenant-fluxos.md §7.1). */
+/** Ícones extras das AÇÕES do card (não de coluna) — ficam aqui junto com os
+ * outros pra o Kanban ter um lugar só de ícone. */
+const IconChef = (
+  <svg {...iconProps}>
+    <path d="M6 20h12M7 16h10l1-5a4 4 0 0 0-2-4 4 4 0 0 0-8 0 4 4 0 0 0-2 4l1 5z" />
+  </svg>
+);
+
+/** Única fonte de verdade de cor/ícone/label por etapa do fluxo — usada no
+ * Kanban e na tela de atendimento, pra que a mesma etapa pareça igual em todo
+ * lugar. Cinco colunas operacionais + `resolvido`, que nunca é coluna (ver
+ * `KANBAN_COLUNAS`): é só o valor de trânsito de quem já saiu do board. */
 export const STATUS_META: Record<EstagioOperacional, StatusMeta> = {
   ia_atendendo: {
     label: "IA atendendo",
@@ -97,69 +98,56 @@ export const STATUS_META: Record<EstagioOperacional, StatusMeta> = {
     accentBgVar: "var(--ia-bg)",
     icon: IconIA,
   },
-  solicitou_humano: {
-    label: "Solicitou humano",
-    accentVar: "var(--amber)",
-    accentBgVar: "var(--amber-bg)",
+  aguardando_humano: {
+    label: "Aguardando humano",
+    accentVar: "var(--orange)",
+    accentBgVar: "var(--orange-bg)",
     icon: IconAlert,
   },
-  humano_atendendo: {
-    label: "Humano atendendo",
+  em_atendimento: {
+    label: "Em atendimento",
     accentVar: "var(--blue)",
     accentBgVar: "var(--blue-bg)",
     icon: IconHeadset,
   },
-  // Nunca aparece como coluna do Kanban (ver KANBAN_COLUNAS) — só existe
-  // aqui pra `STATUS_META` cobrir o tipo inteiro de `EstagioOperacional`,
-  // usado se algum lugar exibir um atendimento resolvido individualmente.
+  na_cozinha: {
+    label: "Na cozinha",
+    accentVar: "var(--amber)",
+    accentBgVar: "var(--amber-bg)",
+    icon: IconChef,
+  },
+  pronto: {
+    label: "Pronto",
+    accentVar: "var(--green)",
+    accentBgVar: "var(--green-bg)",
+    icon: IconBag,
+  },
   resolvido: {
     label: "Resolvido",
     accentVar: "var(--gray)",
     accentBgVar: "var(--gray-bg)",
     icon: IconCheck,
   },
-  aberto: {
-    label: "Aberto",
-    accentVar: "var(--gray)",
-    accentBgVar: "var(--gray-bg)",
-    icon: IconClock,
-  },
-  em_preparacao: {
-    label: "Em preparação",
-    accentVar: "var(--amber)",
-    accentBgVar: "var(--amber-bg)",
-    icon: IconFlame,
-  },
-  pronto: {
-    label: "Pronto",
-    accentVar: "var(--blue)",
-    accentBgVar: "var(--blue-bg)",
-    icon: IconBag,
-  },
-  entregue: {
-    label: "Entregue",
-    accentVar: "var(--green, var(--blue))",
-    accentBgVar: "var(--green-bg, var(--blue-bg))",
-    icon: IconTruck,
-  },
-  cancelado: {
-    label: "Cancelado",
-    accentVar: "var(--red)",
-    accentBgVar: "var(--red-bg)",
-    icon: IconX,
-  },
 };
 
+/** As 5 colunas do Kanban operacional, na ordem do fluxo. `resolvido` não
+ * está aqui por definição: atendimento encerrado sai do board. */
 export const KANBAN_COLUNAS: EstagioOperacional[] = [
   "ia_atendendo",
-  "solicitou_humano",
-  "humano_atendendo",
-  "aberto",
-  "em_preparacao",
+  "aguardando_humano",
+  "em_atendimento",
+  "na_cozinha",
   "pronto",
-  "entregue",
-  "cancelado",
 ];
+
+export const ICONES_ACAO = {
+  atender: IconHeadset,
+  confirmar: IconFlame,
+  pronto: IconBag,
+  entregar: IconTruck,
+  cancelar: IconX,
+  relogio: IconClock,
+};
 
 export function tempoDecorrido(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -169,4 +157,31 @@ export function tempoDecorrido(iso: string): string {
   const h = Math.round(min / 60);
   if (h < 24) return `${h} h`;
   return `${Math.round(h / 24)} d`;
+}
+
+export type NivelEspera = "normal" | "atencao" | "critico";
+
+/** Cronômetro de espera, com os três níveis de atenção do board: até 2min é
+ * normal, 2–5min pede atenção, 5min+ é crítico. O objetivo é o operador achar
+ * rápido quem espera há mais tempo — não é alarme, então o destaque cresce em
+ * peso visual, sem animação. */
+export function tempoEspera(iso: string): { texto: string; nivel: NivelEspera } {
+  const segundosTotais = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const min = Math.floor(segundosTotais / 60);
+  const seg = segundosTotais % 60;
+
+  const texto = min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}min` : min >= 1 ? `${min}min ${seg}s` : `${seg}s`;
+  const nivel: NivelEspera = min >= 5 ? "critico" : min >= 2 ? "atencao" : "normal";
+  return { texto, nivel };
+}
+
+/** Duração de um atendimento em curso, no formato mm:ss que o operador lê de
+ * relance (ex. "03:21"). */
+export function duracaoAtendimento(iso: string): string {
+  const segundosTotais = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const h = Math.floor(segundosTotais / 3600);
+  const min = Math.floor((segundosTotais % 3600) / 60);
+  const seg = segundosTotais % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(min)}:${pad(seg)}` : `${pad(min)}:${pad(seg)}`;
 }

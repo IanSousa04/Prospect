@@ -1,0 +1,76 @@
+/* Mesmo scrim e mesma linguagem de modal do PedidoBuilder (.pb-overlay) —
+   o painel só tem um jeito de sobrepor conteúdo. */
+.cd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.cd-modal {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 12px 32px rgba(20, 15, 10, 0.22);
+}
+
+.cd-titulo {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+}
+.cd-descricao {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.cd-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.cd-btn {
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 7px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+}
+.cd-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.cd-btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-2);
+}
+.cd-btn-ghost:hover:not(:disabled) {
+  background: var(--bg-card);
+  color: var(--text-1);
+}
+.cd-btn-primario {
+  background: var(--primary);
+  color: white;
+}
+.cd-btn-primario:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.cd-btn-destrutivo {
+  background: var(--red);
+  color: white;
+}
+.cd-btn-destrutivo:hover:not(:disabled) {
+  filter: brightness(0.92);
+}

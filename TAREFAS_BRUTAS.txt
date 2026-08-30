@@ -1,3 +1,40 @@
+- TASK:
+Analyze the current repository and compare its AI implementation with `C:\Dev\Claude\Eddy`.
+
+GOAL:
+Identify why the current AI hallucinates more than Eddy and what mechanisms are missing or weaker.
+
+CASE:
+The AI claimed the business sells pizza, although pizza is not on the menu.
+
+ANALYZE:
+
+* AI architecture/flow
+* System prompts/instructions
+* Context construction
+* Business/menu data access
+* Grounding/RAG
+* Tools/functions
+* Memory/history
+* Validation
+* Guardrails
+* Handling of unknown/missing information
+* Relevant implementation differences
+
+OUTPUT:
+
+1. Root causes + code evidence
+2. Eddy mechanisms that prevent hallucinations
+3. Missing/weak mechanisms in the current repository
+4. Improvements ranked by expected impact
+
+CONSTRAINT:
+Do not modify or implement anything. Analysis only.
+
+
+
+- Iniciar o atendimento já perguntando se vai querer saber o cardápio
+
 - Criar a página publica (mobile-first), responsiva para desktop, registrando o pedido através do numero de telefone, com confirmação do código, e aparecendo no kanban
 
 - Ter um cadastro de cidades que fazem entrega (se tiver só uma cidade não é necessário pedir a cidade no endereço, pode assumir a unica do cadastro)
@@ -7,3 +44,9 @@
 - Ter opções de personalidades, simpatico, direto, objetivo...
 
 - Criar um histórico de todas as ações executas no projeto, por humano ou IA. Movimentação entre colunas, arquivamento, soft-deletes.
+
+- Quando concluir pedido ou solicitar humano deve ter uma notificação sonora na plataforma
+
+- Quando o whatsapp desconectar deve aparecer uma mensagem gigante na tela inicial para conectar novamente, se não conectar não deve ser possivel realizar nenhuma operação na plataforma
+
+- A estrutura carrinho não faz sentido na plataforma de food service, analisar uma forma de utilizar outra nomenclatura ou outra coisa.

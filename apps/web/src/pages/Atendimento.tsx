@@ -15,7 +15,7 @@ import type {
   StatusPedido,
   TipoEntrega,
 } from "@prospect/shared";
-import { STATUS_PEDIDO_EDITAVEIS } from "@prospect/shared";
+import { STATUS_PEDIDO_EDITAVEIS, estagioDeAtendimento } from "@prospect/shared";
 import { api } from "../lib/api.js";
 import { supabase } from "../lib/supabase.js";
 import { STATUS_META } from "../components/statusMeta.js";
@@ -409,7 +409,7 @@ export default function Atendimento() {
     );
   }
 
-  const meta = STATUS_META[atendimento.status];
+  const meta = STATUS_META[estagioDeAtendimento(atendimento.status)];
   const podeAssumir =
     atendimento.status !== "resolvido" &&
     atendimento.status !== "humano_atendendo";
@@ -602,7 +602,7 @@ export default function Atendimento() {
                 <div className="msg-tag">
                   {m.remetente === "ia" && STATUS_META.ia_atendendo.icon}
                   {m.remetente === "humano" &&
-                    STATUS_META.humano_atendendo.icon}
+                    STATUS_META.em_atendimento.icon}
                   {m.remetente === "cliente"
                     ? "Cliente"
                     : m.remetente === "ia"
@@ -660,7 +660,7 @@ export default function Atendimento() {
             >
               <div className="handoff-card">
                 <div className="handoff-head">
-                  {STATUS_META.solicitou_humano.icon}
+                  {STATUS_META.aguardando_humano.icon}
                   Novo handoff
                 </div>
                 <div>

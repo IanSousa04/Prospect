@@ -28,6 +28,11 @@ export interface Pedido {
   cliente_id: string;
   atendimento_id: string | null;
 
+  /** Número sequencial POR EMPRESA (migração 0025) — é o número que a cozinha
+   * e o cliente falam em voz alta. Atribuído por trigger no insert; nunca
+   * global, pra não vazar volume de negócio entre tenants. */
+  numero: number;
+
   status: StatusPedido;
   origem: OrigemPedido;
 
@@ -79,6 +84,19 @@ export interface ItemPedidoComOpcoes extends ItemPedido {
 
 export interface PedidoDetalhado extends Pedido {
   itens: ItemPedidoComOpcoes[];
+}
+
+/** Só o que o card do Kanban precisa pra montar o resumo do pedido — evita
+ * trafegar `itens_pedido` inteiro (preço, opções, observações) numa query que
+ * carrega o board inteiro de uma vez. */
+export interface ItemResumo {
+  nome_produto: string;
+  quantidade: number;
+  ordem: number;
+}
+
+export interface PedidoComResumo extends Pedido {
+  itens: ItemResumo[];
 }
 
 /** Estados que ainda podem ser alterados pelo humano no painel — pedidos
