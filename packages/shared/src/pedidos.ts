@@ -3,7 +3,10 @@
 
 export type StatusPedido = "aberto" | "em_preparacao" | "pronto" | "entregue" | "cancelado";
 
-export type OrigemPedido = "painel" | "ia" | "integracao_externa";
+/** `web_publico`: pedido montado pelo próprio cliente na página pública
+ * (tarefa 0043). Distinto de `painel`/`ia` de propósito — quem olha o
+ * Kanban precisa saber que ninguém conversou com esse cliente ainda. */
+export type OrigemPedido = "painel" | "ia" | "integracao_externa" | "web_publico";
 
 export const TIPOS_ENTREGA = ["entrega", "retirada"] as const;
 export type TipoEntrega = (typeof TIPOS_ENTREGA)[number];

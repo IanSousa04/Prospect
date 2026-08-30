@@ -10,6 +10,7 @@ import { tipoMidiaSuportado, baixarESubirMidia, placeholderMidia } from "./lib/m
 import { criarHandoffMidiaNaoSuportada } from "./lib/handoff-midia.js";
 import { publicarStatus, iniciarPollerConexao } from "./lib/conexao.js";
 import { iniciarPoller } from "./poller.js";
+import { iniciarPollerVerificacao } from "./poller-verificacao.js";
 
 const { Client, LocalAuth } = pkg;
 
@@ -48,6 +49,9 @@ async function resolverTelefone(c: ClientType, jid: string): Promise<string> {
  * reinicializada.
  */
 let intervalPoller: NodeJS.Timeout | null = null;
+// Poller próprio pros códigos da página pública — nunca passam por
+// `mensagens` (ver poller-verificacao.ts).
+let intervalPollerVerificacao: NodeJS.Timeout | null = null;
 
 function registrarHandlers(c: ClientType): void {
   c.on("qr", (qr) => {
@@ -77,6 +81,8 @@ function registrarHandlers(c: ClientType): void {
     // um deles sempre contra um client já destruído.
     if (intervalPoller) clearInterval(intervalPoller);
     intervalPoller = iniciarPoller(c);
+    if (intervalPollerVerificacao) clearInterval(intervalPollerVerificacao);
+    intervalPollerVerificacao = iniciarPollerVerificacao(c);
   });
 
   c.on("message", async (message) => {
@@ -187,6 +193,10 @@ function registrarHandlers(c: ClientType): void {
     if (intervalPoller) {
       clearInterval(intervalPoller);
       intervalPoller = null;
+    }
+    if (intervalPollerVerificacao) {
+      clearInterval(intervalPollerVerificacao);
+      intervalPollerVerificacao = null;
     }
     void publicarStatus("desconectado");
   });

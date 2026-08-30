@@ -173,7 +173,7 @@ Board operacional unificado adicionado em 2026-08-27 (pedido do usuário): hoje 
 - [ ] **[P2] Teste de performance do Kanban com muitas conversas.** `SP: 3` ([detalhes](tasks/0072-teste_performance_kanban.md))
 - [ ] **[P2] Não dá pra editar itens de um pedido já criado** `SP: 5` ([detalhes](tasks/0041-editar_itens_pedido.md))
 - [ ] **[P2] Gateway de pagamento real** `SP: 13` ([detalhes](tasks/0042-gateway_pagamento.md))
-- [ ] **[P2] Página pública de cardápio/pedido (link direto, sem WhatsApp).** `SP: 8` ([detalhes](tasks/0043-pagina_publica_pedido.md))
+- [x] **[P2] Página pública de cardápio/pedido (link direto, sem WhatsApp).** `SP: 8` ([detalhes](tasks/0043-pagina_publica_pedido.md))
 
 ## 7. Inteligência Comercial (Fase 4) — P2
 

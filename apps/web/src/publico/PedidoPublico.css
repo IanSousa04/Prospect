@@ -1,0 +1,892 @@
+/* Página pública de pedido (tarefa 0043).
+
+   Mobile-first de verdade: o layout base é o de celular (uma coluna, carrinho
+   como painel que sobe por cima) e a versão de desktop entra em @media a
+   partir de 900px, virando duas colunas com o carrinho fixo à direita — o
+   padrão consolidado nas referências de mercado pesquisadas para esta tarefa
+   (Anota AI, Goomer, CardápioWeb).
+
+   Reusa os tokens de cor/tipografia do painel (index.css) em vez de abrir uma
+   segunda paleta: é a mesma marca do produto, e uma cor definida aqui viraria
+   um valor solto que ninguém atualiza junto quando o design system mudar.
+
+   Prefixo `pp-` em tudo porque esta página divide a folha de estilo global
+   com o painel. */
+
+.pp {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text-1);
+  padding-bottom: 88px; /* espaço da barra fixa do carrinho no celular */
+}
+
+/* ---------- telas neutras (carregando / erro) ---------- */
+
+.pp-tela-neutra {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  background: var(--bg);
+}
+
+/* ---------- identificação ---------- */
+
+.pp-identificacao {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--bg);
+}
+
+.pp-ident-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 24px 20px;
+}
+
+.pp-ident-marca,
+.pp-topo-marca {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pp-ident-inicial {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 12px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.pp-ident-loja,
+.pp-topo-loja {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.pp-ident-sub,
+.pp-topo-prazo {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.pp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.pp-ident-acoes {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+/* ---------- formulários ---------- */
+
+.pp-label {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.pp-ajuda {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.45;
+}
+
+.pp-erro {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--red);
+  line-height: 1.45;
+}
+
+.pp-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: inherit;
+  /* 16px evita o zoom automático do iOS ao focar um campo — abaixo disso o
+     Safari dá zoom e o layout "pula" na cara do cliente. */
+  font-size: 16px;
+}
+
+.pp-input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.pp-input-grande {
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.pp-input-codigo {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  letter-spacing: 0.34em;
+  text-align: center;
+}
+
+.pp-textarea {
+  resize: vertical;
+  font-size: 15px;
+}
+
+/* ---------- botões ---------- */
+
+.pp-btn-primario,
+.pp-btn-secundario {
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  /* 48px de alvo de toque — abaixo disso o dedo erra, principalmente nos
+     botões de quantidade dentro do carrinho. */
+  min-height: 48px;
+}
+
+.pp-btn-primario {
+  margin-top: 6px;
+  background: var(--primary);
+  color: #fff;
+}
+
+.pp-btn-primario:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.pp-btn-secundario {
+  background: var(--bg-card);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+}
+
+.pp-btn-primario:disabled,
+.pp-btn-secundario:disabled,
+.pp-btn-texto:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pp-btn-texto {
+  background: none;
+  border: none;
+  padding: 8px 4px;
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+/* ---------- topo ---------- */
+
+.pp-topo {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.pp-topo-conteudo {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ---------- acompanhamento do pedido ---------- */
+
+.pp-acompanhamento {
+  max-width: 1100px;
+  margin: 12px auto 0;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber);
+  border-radius: 12px;
+}
+
+.pp-acomp-titulo {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.pp-acomp-status {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.pp-acomp-total {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+/* ---------- corpo ---------- */
+
+.pp-corpo {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.pp-vazio {
+  margin: 24px 0;
+  color: var(--text-3);
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ---------- cardápio ---------- */
+
+.pp-categoria + .pp-categoria {
+  margin-top: 26px;
+}
+
+.pp-categoria-nome {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+
+.pp-produtos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pp-produto {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  font-family: inherit;
+  color: inherit;
+}
+
+.pp-produto:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+}
+
+.pp-produto-indisponivel {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pp-produto-texto {
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-produto-nome {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pp-produto-descricao {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+  line-height: 1.45;
+  /* duas linhas de descrição — o suficiente pra vender o item sem transformar
+     a lista numa parede de texto que ninguém rola até o fim */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pp-produto-preco {
+  margin: 8px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.pp-produto-preco s {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.pp-produto-imagem {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 84px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--bg-card);
+}
+
+.pp-tag-indisponivel {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--gray-bg);
+  color: var(--gray);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+/* ---------- carrinho / checkout (painel) ---------- */
+
+.pp-lateral {
+  /* No celular é uma folha que sobe por cima do cardápio, escondida até o
+     cliente pedir. `display: none` em vez de translate: nada de conteúdo de
+     carrinho ficando alcançável por leitor de tela enquanto está fechado. */
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--bg);
+  flex-direction: column;
+}
+
+.pp-lateral-aberta {
+  display: flex;
+}
+
+.pp-lateral-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.pp-lateral-cabecalho h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.pp-lateral-conteudo {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.pp-lateral-rodape {
+  border-top: 1px solid var(--border-soft);
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+  background: var(--bg-raised);
+}
+
+.pp-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 15px;
+  color: var(--text-2);
+}
+
+.pp-total strong {
+  font-size: 20px;
+  color: var(--text-1);
+}
+
+/* ---------- linhas do carrinho ---------- */
+
+.pp-linhas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pp-linha {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.pp-linha-info {
+  min-width: 0;
+}
+
+.pp-linha-nome {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.pp-linha-opcoes,
+.pp-linha-obs {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+  font-style: normal;
+}
+
+.pp-linha-acoes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.pp-linha-preco {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ---------- stepper de quantidade ---------- */
+
+.pp-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  background: var(--bg);
+}
+
+.pp-stepper button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.pp-stepper button:disabled {
+  opacity: 0.35;
+}
+
+.pp-stepper span {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.pp-stepper-pequeno button {
+  width: 34px;
+  height: 34px;
+  font-size: 17px;
+}
+
+/* ---------- checkout ---------- */
+
+.pp-checkout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.pp-escolhas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pp-escolha {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.pp-escolha-ativa {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.pp-endereco-grade {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pp-col-2 {
+  grid-column: span 2;
+}
+
+/* ---------- revisão ---------- */
+
+.pp-revisao-itens {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.pp-revisao-itens li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pp-revisao-dados {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0 0 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 13.5px;
+}
+
+.pp-revisao-dados dt {
+  color: var(--text-3);
+  font-weight: 700;
+}
+
+.pp-revisao-dados dd {
+  margin: 0;
+}
+
+/* ---------- barra fixa do carrinho (celular) ---------- */
+
+.pp-barra-carrinho {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border: none;
+  border-radius: 12px;
+  background: var(--primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 6px 20px rgba(20, 15, 10, 0.22);
+}
+
+/* ---------- modal de produto ---------- */
+
+.pp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--overlay);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.pp-modal {
+  position: relative;
+  width: 100%;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-radius: 16px 16px 0 0;
+}
+
+.pp-modal-fechar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-1);
+  font-size: 15px;
+}
+
+.pp-modal-carregando {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.pp-modal-conteudo {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.pp-modal-imagem {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.pp-modal-titulo {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.pp-modal-descricao {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.pp-modal-ingredientes,
+.pp-modal-restricoes {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.45;
+}
+
+.pp-grupo {
+  margin: 18px 0 0;
+  padding: 0;
+  border: none;
+}
+
+.pp-grupo-cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 0 8px;
+  width: 100%;
+}
+
+.pp-grupo-nome {
+  font-size: 14.5px;
+  font-weight: 800;
+}
+
+.pp-tag-obrigatorio,
+.pp-tag-opcional {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pp-tag-obrigatorio {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.pp-tag-opcional {
+  background: var(--gray-bg);
+  color: var(--gray);
+}
+
+.pp-grupo-contador {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.pp-opcao {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 14px;
+}
+
+.pp-opcao input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+}
+
+.pp-opcao-nome {
+  flex: 1;
+}
+
+.pp-opcao-preco {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 700;
+}
+
+.pp-modal-rodape {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+}
+
+.pp-btn-adicionar {
+  margin-top: 0;
+  flex: 1;
+}
+
+.pp-modal-aviso {
+  padding: 0 16px 12px;
+  background: var(--bg-raised);
+}
+
+/* ---------- aviso flutuante ---------- */
+
+.pp-aviso {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  z-index: 60;
+  max-width: calc(100% - 32px);
+  padding: 12px 18px;
+  border-radius: 10px;
+  background: var(--text-1);
+  color: var(--bg);
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* =====================================================================
+   Desktop — a partir daqui o carrinho deixa de ser folha sobreposta e vira
+   coluna fixa ao lado do cardápio: com espaço horizontal sobrando, esconder
+   o carrinho atrás de um clique só atrapalha.
+   ===================================================================== */
+
+@media (min-width: 900px) {
+  .pp {
+    padding-bottom: 0;
+  }
+
+  .pp-corpo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    align-items: start;
+    gap: 24px;
+    padding: 24px 16px 48px;
+  }
+
+  .pp-produtos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+  }
+
+  .pp-lateral {
+    display: flex;
+    position: sticky;
+    /* topo sticky (~65px) + respiro */
+    top: 80px;
+    inset: auto;
+    max-height: calc(100vh - 104px);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    background: var(--bg-raised);
+    overflow: hidden;
+  }
+
+  .pp-lateral-conteudo {
+    background: var(--bg-raised);
+  }
+
+  .pp-so-mobile {
+    display: none;
+  }
+
+  .pp-overlay {
+    align-items: center;
+  }
+
+  .pp-modal {
+    max-width: 520px;
+    border-radius: 16px;
+  }
+
+  .pp-aviso {
+    bottom: 24px;
+  }
+}
+
+/* Quem pediu menos movimento não ganha animação nenhuma — a página não
+   depende de transição pra ser compreendida. */
+@media (prefers-reduced-motion: reduce) {
+  .pp * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

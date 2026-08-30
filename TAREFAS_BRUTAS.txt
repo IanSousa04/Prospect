@@ -1,41 +1,20 @@
-- TASK:
-Analyze the current repository and compare its AI implementation with `C:\Dev\Claude\Eddy`.
+- 
 
-GOAL:
-Identify why the current AI hallucinates more than Eddy and what mechanisms are missing or weaker.
+- A página publica deve guardar a sessão do usuário que entrou pelo numero de telefone durante 24 horas, não pedindo login quando acessar novamente, exibindo históricos de pedidos.
 
-CASE:
-The AI claimed the business sells pizza, although pizza is not on the menu.
+- Quero modificar meu projeto, a IA não deve mais ser o centro da plataforma (executar ações de criar/cancelar pedido, adicionar itens...), o coração da plataforma é o link publico de receber o pedido, a IA deve apenas auxiliar nas dúvidas , informar prazo de entrega (inicialmente fixo de 60 a 90 minutos). Verifique o que é necessário para fazer essas alterações (RAG, embeddings, vetores e etc). Se necessário consulte um projeto semelhante em C:\Dev\Claude\Eddy.
 
-ANALYZE:
+- Temos que fazer algumas alterações estruturais no projeto.
+Quero ter apenas as colunas: "Em atendimento", "Na cozinha" e "Pronto".
+No card do Kanban preciso ter os status de atendimento: IA, Humano, Solicitou Humano.
+A ordenação em cada coluna tem que ser primeiro os que "Solicitou Humano", depois o horário de inicio da conversa.
+Quando o status mudar para "Solicitou Humano" deve mudar o aspecto do card, como alerta visual para o operador. 
 
-* AI architecture/flow
-* System prompts/instructions
-* Context construction
-* Business/menu data access
-* Grounding/RAG
-* Tools/functions
-* Memory/history
-* Validation
-* Guardrails
-* Handling of unknown/missing information
-* Relevant implementation differences
+- As mudanças de status do card devem enviar mensagem para o whatsapp, sem gravar no histório.
+"Na cozinha": Seu pedido foi aprovado e já está sendo preparado!
+"Pronto": Seu pedido em breve será entregue!
 
-OUTPUT:
-
-1. Root causes + code evidence
-2. Eddy mechanisms that prevent hallucinations
-3. Missing/weak mechanisms in the current repository
-4. Improvements ranked by expected impact
-
-CONSTRAINT:
-Do not modify or implement anything. Analysis only.
-
-
-
-- Iniciar o atendimento já perguntando se vai querer saber o cardápio
-
-- Criar a página publica (mobile-first), responsiva para desktop, registrando o pedido através do numero de telefone, com confirmação do código, e aparecendo no kanban
+- Iniciar o atendimento já mandando o link do cardápio digital
 
 - Ter um cadastro de cidades que fazem entrega (se tiver só uma cidade não é necessário pedir a cidade no endereço, pode assumir a unica do cadastro)
 

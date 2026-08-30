@@ -1,31 +1,25 @@
 import type { FastifyInstance } from "fastify";
 import type {
-  AguardandoConfirmacao,
   AtendimentoComContexto,
   EnderecoEntrega,
   EstagioOperacional,
-  FluxoPedidoConfig,
   FormaPagamento,
-  ItemCarrinho,
-  OrderContext,
   StatusAtendimento,
   TipoEntrega,
-  UltimoPedidoCriado,
 } from "@prospect/shared";
 import type { PedidoComResumo, StatusPedido } from "@prospect/shared";
-import {
-  estagioDeAtendimento,
-  aplicarMutacaoCarrinho,
-  encontrarLinhaEquivalente,
-  pedidoVazio,
-  resumoPedidoIa,
-  FluxoPedidoConfigSchema,
-  FLUXO_PEDIDO_CONFIG_PADRAO,
-} from "@prospect/shared";
-import { montarItensComSnapshot } from "@prospect/pedidos-core";
-import { randomUUID } from "node:crypto";
+import { estagioDeAtendimento } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth } from "../lib/auth.js";
+import {
+  adicionarItemAoCarrinho,
+  atualizarItemDoCarrinho,
+  definirEntregaDoCarrinho,
+  definirPagamentoDoCarrinho,
+  lerCarrinho,
+  removerItemDoCarrinho,
+  type ResultadoCarrinho,
+} from "../services/carrinho.js";
 
 const STATUS_VALIDOS: StatusAtendimento[] = ["ia_atendendo", "solicitou_humano", "humano_atendendo", "resolvido"];
 
@@ -41,90 +35,16 @@ const TRANSICOES: Record<StatusAtendimento, StatusAtendimento[]> = {
   resolvido: [],
 };
 
-/** Lê/grava o Order Context (`ia_sessoes.estado_json.pedido`) — mesmo
- * estado que a IA usa (`apps/ai-orchestrator/src/agent/sessao.ts`).
- * Mescla sobre `estado_json` existente (nunca sobrescreve outros campos
- * que só a IA usa, ex. `ultimo_produto_mencionado`) — mesmo cuidado que
- * `mesclarEstado` já tem do lado do orquestrador. Um humano editando pela
- * UI (tarefa 0063) usa exatamente estas duas funções, nunca um pedido
- * paralelo (CLAUDE.md regra 8). */
-interface EstadoSessaoIa {
-  pedido: OrderContext;
-  aguardando_confirmacao: AguardandoConfirmacao | null;
-  ultimo_pedido_criado: UltimoPedidoCriado | null;
-}
-
-/** Lê de uma vez tudo que o painel precisa de `ia_sessoes.estado_json` —
- * carrinho, confirmação pendente e ponteiro do pedido já criado. Uma query
- * só: os três campos vivem na mesma linha e sempre são lidos juntos (a
- * etapa do checkout, `estado_checkout`, é derivada dos três). */
-async function carregarEstadoIa(empresaId: string, atendimentoId: string): Promise<EstadoSessaoIa> {
-  const { data } = await supabaseAdmin
-    .from("ia_sessoes")
-    .select("estado_json")
-    .eq("empresa_id", empresaId)
-    .eq("atendimento_id", atendimentoId)
-    .maybeSingle();
-
-  const estado = (data?.estado_json as {
-    pedido?: OrderContext;
-    aguardando_confirmacao?: AguardandoConfirmacao;
-    ultimo_pedido_criado?: UltimoPedidoCriado;
-  } | null) ?? {};
-
-  return {
-    pedido: estado.pedido ?? pedidoVazio(),
-    aguardando_confirmacao: estado.aguardando_confirmacao ?? null,
-    ultimo_pedido_criado: estado.ultimo_pedido_criado ?? null,
-  };
-}
-
-async function carregarPedidoIa(empresaId: string, atendimentoId: string): Promise<OrderContext> {
-  return (await carregarEstadoIa(empresaId, atendimentoId)).pedido;
-}
-
-/** Motor de etapas configurável (tasks/0056/0077/0078) — o painel humano
- * precisa refletir exatamente as mesmas etapas/opções que a IA usa
- * (CLAUDE.md regra 8: mesmo estado, nunca um cálculo paralelo), então
- * `informacoesPendentes`/`aplicarMutacaoCarrinho` aqui usam a mesma config
- * real da empresa, nunca o default silencioso. */
-async function carregarFluxoPedidoConfig(empresaId: string): Promise<FluxoPedidoConfig> {
-  const { data } = await supabaseAdmin
-    .from("ia_configuracoes")
-    .select("fluxo_pedido_json")
-    .eq("empresa_id", empresaId)
-    .maybeSingle();
-
-  const parseado = FluxoPedidoConfigSchema.safeParse(data?.fluxo_pedido_json ?? {});
-  return parseado.success ? parseado.data : FLUXO_PEDIDO_CONFIG_PADRAO;
-}
-
-async function salvarPedidoIa(empresaId: string, atendimentoId: string, pedido: OrderContext): Promise<void> {
-  const { data } = await supabaseAdmin
-    .from("ia_sessoes")
-    .select("estado_json")
-    .eq("empresa_id", empresaId)
-    .eq("atendimento_id", atendimentoId)
-    .maybeSingle();
-
-  const estadoAtual = (data?.estado_json as Record<string, unknown> | null) ?? {};
-
-  // Um humano editando o carrinho (tarefa 0063) sempre invalida uma
-  // confirmação pendente (tarefa 0022) — o hash recalculado no lado da IA
-  // já não bateria mais de qualquer forma, mas limpar aqui evita que o
-  // painel continue mostrando "aguardando confirmação" pra um resumo que
-  // não existe mais.
-  const { aguardando_confirmacao: _descartado, ...estadoSemConfirmacao } = estadoAtual;
-
-  await supabaseAdmin.from("ia_sessoes").upsert(
-    {
-      empresa_id: empresaId,
-      atendimento_id: atendimentoId,
-      estado_json: { ...estadoSemConfirmacao, pedido },
-    },
-    { onConflict: "atendimento_id" },
-  );
-}
+/** Códigos de erro do serviço de carrinho que são falha de VALIDAÇÃO (400) —
+ * qualquer outro é "não achei" (404). O painel traduz o código pra frase
+ * (ver pages/kanban/acoes.ts); a rota só escolhe o status HTTP. */
+const ERROS_CARRINHO_400: ReadonlySet<string> = new Set([
+  "produto_e_quantidade_obrigatorios",
+  "tipo_entrega_invalido",
+  "tipo_entrega_nao_oferecido",
+  "forma_pagamento_invalida",
+  "forma_pagamento_nao_aceita",
+]);
 
 /** Um pedido só "domina" a coluna do card enquanto está em produção. Pedido
  * arquivado, entregue ou cancelado sai da visão ativa do board: o card volta a
@@ -170,6 +90,14 @@ function paraContexto(row: any): AtendimentoComContexto {
 
 export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", requireAuth);
+
+  /** Traduz o resultado do serviço de carrinho em resposta HTTP — uma função
+   * só pras cinco rotas de mutação, que antes repetiam o mesmo `if (!ok)`. */
+  function responderCarrinho(reply: any, resultado: ResultadoCarrinho) {
+    if (resultado.ok) return resultado.resumo;
+    const codigo = ERROS_CARRINHO_400.has(resultado.erro) ? 400 : 404;
+    return reply.code(codigo).send({ error: resultado.erro, ...(resultado.extra ?? {}) });
+  }
 
   // Lista todos os atendimentos da empresa, já com cliente e handoff aberto
   // embutidos — é a query que alimenta o Kanban inteiro numa chamada só.
@@ -235,172 +163,66 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
   // Carrinho em construção pela IA (ver ia_sessoes.estado_json.pedido,
   // apps/ai-orchestrator/src/agent/sessao.ts). Desde a tarefa 0063, também
   // editável por um humano (rotas abaixo) — mesmo estado que a IA usa,
-  // nunca um pedido paralelo (CLAUDE.md regra 8). GET sempre devolve um
-  // resumo válido (carrinho vazio, não 404) mesmo sem nenhuma sessão criada
-  // ainda, pra UI não precisar tratar caso especial.
-  app.get<{ Params: { id: string } }>("/atendimentos/:id/carrinho", async (request, reply) => {
+  // nunca um pedido paralelo (CLAUDE.md regra 8). A mecânica real vive em
+  // services/carrinho.ts, compartilhada com a página pública (tarefa 0043).
+  // GET sempre devolve um resumo válido (carrinho vazio, não 404) mesmo sem
+  // nenhuma sessão criada ainda, pra UI não precisar tratar caso especial.
+  app.get<{ Params: { id: string } }>("/atendimentos/:id/carrinho", async (request) => {
     const { empresaId } = request.auth!;
-    const { id } = request.params;
-
-    const [estado, fluxoPedido] = await Promise.all([
-      carregarEstadoIa(empresaId, id),
-      carregarFluxoPedidoConfig(empresaId),
-    ]);
-    return resumoPedidoIa(estado.pedido, estado.aguardando_confirmacao, fluxoPedido, estado.ultimo_pedido_criado);
+    return lerCarrinho(supabaseAdmin, empresaId, request.params.id);
   });
 
-  // Adicionar item ao carrinho — mesma validação de preço/disponibilidade
-  // real que a tool `adicionar_ao_carrinho` da IA usa (montarItensComSnapshot,
-  // CLAUDE.md regra 1), e a mesma mesclagem de linha equivalente pra nunca
-  // duplicar (ver tarefa 0054, episódio real do loop de duplicação).
   app.post<{
     Params: { id: string };
     Body: { produto_id: string; quantidade: number; observacoes?: string | null; opcoes?: Array<{ opcao_id: string }> };
   }>("/atendimentos/:id/carrinho/itens", async (request, reply) => {
     const { empresaId } = request.auth!;
-    const { id } = request.params;
-    const { produto_id, quantidade, opcoes } = request.body;
-    const observacoes = request.body.observacoes ?? null;
-    const opcoesInput = opcoes ?? [];
-
-    if (!produto_id || !quantidade || quantidade < 1) {
-      return reply.code(400).send({ error: "produto_e_quantidade_obrigatorios" });
-    }
-
-    const [pedido, fluxoPedido] = await Promise.all([carregarPedidoIa(empresaId, id), carregarFluxoPedidoConfig(empresaId)]);
-    const linhaExistente = encontrarLinhaEquivalente(
-      pedido.itens,
-      produto_id,
-      observacoes,
-      opcoesInput.map((o) => o.opcao_id),
+    return responderCarrinho(
+      reply,
+      await adicionarItemAoCarrinho(supabaseAdmin, empresaId, request.params.id, request.body),
     );
-    const quantidadeFinal = (linhaExistente?.quantidade ?? 0) + quantidade;
-
-    const montagem = await montarItensComSnapshot(
-      supabaseAdmin,
-      [{ produto_id, quantidade: quantidadeFinal, observacoes, opcoes: opcoesInput }],
-      empresaId,
-    );
-    if (!montagem.ok) return reply.code(400).send({ error: montagem.erro });
-
-    const itemAtualizado: ItemCarrinho = { ...montagem.itens[0]!, linha_id: linhaExistente?.linha_id ?? randomUUID() };
-    const novosItens = linhaExistente
-      ? pedido.itens.map((item) => (item.linha_id === linhaExistente.linha_id ? itemAtualizado : item))
-      : [...pedido.itens, itemAtualizado];
-
-    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
-    await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
   });
 
-  // Atualizar quantidade/observação de uma linha já existente — revalida
-  // preço/disponibilidade de novo (não é só editar um número).
   app.patch<{
     Params: { id: string; linhaId: string };
     Body: { quantidade?: number; observacoes?: string | null };
   }>("/atendimentos/:id/carrinho/itens/:linhaId", async (request, reply) => {
     const { empresaId } = request.auth!;
     const { id, linhaId } = request.params;
-
-    const [pedido, fluxoPedido] = await Promise.all([carregarPedidoIa(empresaId, id), carregarFluxoPedidoConfig(empresaId)]);
-    const itemAtual = pedido.itens.find((item) => item.linha_id === linhaId);
-    if (!itemAtual) return reply.code(404).send({ error: "linha_nao_encontrada" });
-
-    const montagem = await montarItensComSnapshot(
-      supabaseAdmin,
-      [
-        {
-          produto_id: itemAtual.produto_id,
-          quantidade: request.body.quantidade ?? itemAtual.quantidade,
-          observacoes: request.body.observacoes !== undefined ? request.body.observacoes : itemAtual.observacoes,
-          opcoes: itemAtual.opcoes.map((o) => ({ opcao_id: o.opcao_id })),
-        },
-      ],
-      empresaId,
+    return responderCarrinho(
+      reply,
+      await atualizarItemDoCarrinho(supabaseAdmin, empresaId, id, linhaId, request.body),
     );
-    if (!montagem.ok) return reply.code(400).send({ error: montagem.erro });
-
-    const itemAtualizado: ItemCarrinho = { ...montagem.itens[0]!, linha_id: linhaId };
-    const novosItens = pedido.itens.map((item) => (item.linha_id === linhaId ? itemAtualizado : item));
-    const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
-    await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
   });
 
-  // Remover uma linha do carrinho.
   app.delete<{ Params: { id: string; linhaId: string } }>(
     "/atendimentos/:id/carrinho/itens/:linhaId",
     async (request, reply) => {
       const { empresaId } = request.auth!;
       const { id, linhaId } = request.params;
-
-      const [pedido, fluxoPedido] = await Promise.all([carregarPedidoIa(empresaId, id), carregarFluxoPedidoConfig(empresaId)]);
-      if (!pedido.itens.some((item) => item.linha_id === linhaId)) {
-        return reply.code(404).send({ error: "linha_nao_encontrada" });
-      }
-
-      const novosItens = pedido.itens.filter((item) => item.linha_id !== linhaId);
-      const atualizado = aplicarMutacaoCarrinho(pedido, novosItens, fluxoPedido);
-      await salvarPedidoIa(empresaId, id, atualizado);
-      return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
+      return responderCarrinho(reply, await removerItemDoCarrinho(supabaseAdmin, empresaId, id, linhaId));
     },
   );
 
-  // Definir tipo de entrega + endereço — mesmos campos que a IA vai
-  // preencher via conversa (tarefas 0018/0020), mesmo estado.
   app.put<{
     Params: { id: string };
     Body: { tipo_entrega: TipoEntrega | null; endereco: EnderecoEntrega | null };
   }>("/atendimentos/:id/carrinho/entrega", async (request, reply) => {
     const { empresaId } = request.auth!;
-    const { id } = request.params;
-    const { tipo_entrega, endereco } = request.body;
-
-    if (tipo_entrega && !["entrega", "retirada"].includes(tipo_entrega)) {
-      return reply.code(400).send({ error: "tipo_entrega_invalido" });
-    }
-
-    const fluxoPedido = await carregarFluxoPedidoConfig(empresaId);
-    if (tipo_entrega && !fluxoPedido.tipos_entrega_oferecidos.includes(tipo_entrega)) {
-      return reply.code(400).send({ error: "tipo_entrega_nao_oferecido", tipos_oferecidos: fluxoPedido.tipos_entrega_oferecidos });
-    }
-
-    const pedido = await carregarPedidoIa(empresaId, id);
-    // Mudar entrega/endereço também é uma mutação real do pedido — mesma
-    // regra 6 do CLAUDE.md de nunca herdar confirmação de um estado que já
-    // mudou (ver aplicarMutacaoCarrinho, mesmo espírito aplicado aqui).
-    const atualizado = {
-      ...pedido,
-      tipo_entrega,
-      endereco: tipo_entrega === "retirada" ? null : endereco,
-      carrinho_confirmado: false,
-    };
-    await salvarPedidoIa(empresaId, id, atualizado);
-    return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
+    return responderCarrinho(
+      reply,
+      await definirEntregaDoCarrinho(supabaseAdmin, empresaId, request.params.id, request.body),
+    );
   });
 
-  // Definir forma de pagamento.
   app.put<{ Params: { id: string }; Body: { forma_pagamento: FormaPagamento | null } }>(
     "/atendimentos/:id/carrinho/pagamento",
     async (request, reply) => {
       const { empresaId } = request.auth!;
-      const { id } = request.params;
-      const { forma_pagamento } = request.body;
-
-      const FORMAS_VALIDAS: FormaPagamento[] = ["dinheiro", "cartao_credito", "cartao_debito", "pix", "outro"];
-      if (forma_pagamento && !FORMAS_VALIDAS.includes(forma_pagamento)) {
-        return reply.code(400).send({ error: "forma_pagamento_invalida" });
-      }
-
-      const fluxoPedido = await carregarFluxoPedidoConfig(empresaId);
-      if (forma_pagamento && !fluxoPedido.formas_pagamento_aceitas.includes(forma_pagamento)) {
-        return reply.code(400).send({ error: "forma_pagamento_nao_aceita", formas_aceitas: fluxoPedido.formas_pagamento_aceitas });
-      }
-
-      const pedido = await carregarPedidoIa(empresaId, id);
-      const atualizado = { ...pedido, forma_pagamento, carrinho_confirmado: false };
-      await salvarPedidoIa(empresaId, id, atualizado);
-      return resumoPedidoIa(atualizado, null, fluxoPedido, (await carregarEstadoIa(empresaId, id)).ultimo_pedido_criado);
+      return responderCarrinho(
+        reply,
+        await definirPagamentoDoCarrinho(supabaseAdmin, empresaId, request.params.id, request.body.forma_pagamento),
+      );
     },
   );
 
