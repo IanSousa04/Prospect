@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { PedidoDetalhado, StatusPedido, FormaPagamento, TipoEntrega, EnderecoEntrega } from "@prospect/shared";
-import { criarPedidoComItens } from "@prospect/shared";
+import { criarPedidoComItens, textoNotificacaoStatusPedido } from "@prospect/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth } from "../lib/auth.js";
 
@@ -136,7 +136,7 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
 
       const { data: pedido } = await supabaseAdmin
         .from("pedidos")
-        .select("status")
+        .select("status, cliente_id, tipo_entrega")
         .eq("id", id)
         .eq("empresa_id", empresaId)
         .maybeSingle();
@@ -159,6 +159,30 @@ export async function pedidosRoutes(app: FastifyInstance): Promise<void> {
         request.log.error(error);
         return reply.code(500).send({ error: "erro_ao_atualizar_status" });
       }
+
+      // Notificação de progresso do pedido (colunas "Na cozinha"/"Pronto" do
+      // Kanban): enfileira pra o whatsapp-worker enviar ao cliente SEM passar
+      // por `mensagens` (que é histórico de conversa). A mudança de status já
+      // aconteceu; se o enfileiramento falhar, logamos e o pedido segue — o
+      // envio é best-effort e não pode reverter o status persistido.
+      if (novoStatus === "em_preparacao" || novoStatus === "pronto") {
+        const { error: notifError } = await supabaseAdmin
+          .from("notificacoes_pedido")
+          .insert({
+            empresa_id: empresaId,
+            pedido_id: id,
+            cliente_id: pedido.cliente_id,
+            tipo: novoStatus,
+            conteudo: textoNotificacaoStatusPedido(novoStatus, pedido.tipo_entrega),
+          });
+        if (notifError) {
+          request.log.error(
+            { pedidoId: id, status: novoStatus },
+            "falha ao enfileirar notificação de status do pedido",
+          );
+        }
+      }
+
       return data;
     },
   );

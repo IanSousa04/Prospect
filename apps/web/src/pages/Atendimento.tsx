@@ -127,6 +127,18 @@ const IconCheck = (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 );
+const IconX = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M18 6L6 18M6 6l12 12" />
+  </svg>
+);
 const IconDownload = (
   <svg
     viewBox="0 0 24 24"
@@ -410,14 +422,16 @@ export default function Atendimento() {
   }
 
   const meta = STATUS_ATENDIMENTO_META[atendimento.status];
-  const podeAssumir =
-    atendimento.status !== "resolvido" &&
-    atendimento.status !== "humano_atendendo";
+  // Terminal (resolvido/cancelado): nada de assumir/devolver/finalizar/cancelar.
+  const terminal = atendimento.status === "resolvido" || atendimento.status === "cancelado";
+  const podeAssumir = !terminal && atendimento.status !== "humano_atendendo";
   // Espelha a checagem do backend (POST /atendimentos/:id/devolver-ia) —
   // já ativo com a IA ou já encerrado não tem pra onde devolver.
-  const podeDevolverParaIa =
-    atendimento.status !== "ia_atendendo" && atendimento.status !== "resolvido";
-  const podeFinalizar = atendimento.status !== "resolvido";
+  const podeDevolverParaIa = !terminal && atendimento.status !== "ia_atendendo";
+  const podeFinalizar = !terminal;
+  // Cancelar a conversa só faz sentido sem pedido ativo — espelha a guarda do
+  // backend (POST /atendimentos/:id/cancelar).
+  const podeCancelar = !terminal && !atendimento.pedido_estagio;
 
   async function assumir() {
     if (!id) return;
@@ -442,6 +456,21 @@ export default function Atendimento() {
         err instanceof Error && err.message.includes("handoff_pendente_impede_finalizar")
           ? "Existe um handoff aberto/assumido para este atendimento — resolva-o antes de finalizar."
           : "Não foi possível finalizar o atendimento.";
+      window.alert(mensagem);
+    }
+  }
+
+  async function cancelar() {
+    if (!id) return;
+    if (!window.confirm("Cancelar este atendimento? Essa ação não pode ser desfeita pela tela.")) return;
+    try {
+      await api.cancelarAtendimento(id);
+      carregar();
+    } catch (err) {
+      const mensagem =
+        err instanceof Error && err.message.includes("pedido_ativo_impede_cancelar")
+          ? "Este atendimento tem um pedido ativo — cancele o pedido primeiro."
+          : "Não foi possível cancelar o atendimento.";
       window.alert(mensagem);
     }
   }
@@ -590,6 +619,15 @@ export default function Atendimento() {
           >
             {IconCheck}
             Finalizar atendimento
+          </button>
+          <button
+            className="btn-danger"
+            onClick={cancelar}
+            disabled={!podeCancelar}
+            title={podeCancelar ? undefined : "Só é possível cancelar sem pedido ativo"}
+          >
+            {IconX}
+            Cancelar atendimento
           </button>
         </div>
       </div>

@@ -71,7 +71,11 @@ export async function ingerirMensagemCliente(params: {
     .select("id")
     .eq("empresa_id", env.empresaId)
     .eq("cliente_id", cliente.id)
-    .neq("status", "resolvido")
+    // Whitelist de status ATIVOS em vez de `neq resolvido`: com o status
+    // `cancelado` (migration 0031), só isso garante que uma conversa
+    // cancelada também não seja reutilizada — o cliente que volta depois de
+    // cancelada/finalizada ganha um atendimento novo em `ia_atendendo`.
+    .in("status", ["ia_atendendo", "solicitou_humano", "humano_atendendo"])
     .order("criado_em", { ascending: false })
     .limit(1)
     .maybeSingle();

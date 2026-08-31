@@ -165,7 +165,11 @@ async function buscarAtendimentoAtivo(
     .select("id")
     .eq("empresa_id", empresaId)
     .eq("cliente_id", clienteId)
-    .neq("status", "resolvido")
+    // Whitelist de status ATIVOS em vez de `neq resolvido`: com o status
+    // `cancelado` (migration 0031), só isso garante que uma conversa
+    // cancelada também não seja reutilizada — o pedido do link público cai
+    // numa conversa NOVA, como quando o cliente volta depois de finalizada.
+    .in("status", ["ia_atendendo", "solicitou_humano", "humano_atendendo"])
     .order("criado_em", { ascending: false })
     .limit(1)
     .maybeSingle();

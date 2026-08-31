@@ -147,6 +147,12 @@ export const STATUS_ATENDIMENTO_META: Record<StatusAtendimento, StatusMeta> = {
     accentBgVar: "var(--gray-bg)",
     icon: IconCheck,
   },
+  cancelado: {
+    label: "Cancelado",
+    accentVar: "var(--gray)",
+    accentBgVar: "var(--gray-bg)",
+    icon: IconX,
+  },
 };
 
 /** As 3 colunas do Kanban operacional, na ordem do fluxo. `resolvido` não

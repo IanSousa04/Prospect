@@ -127,12 +127,15 @@ export interface IaPermissao {
   atualizado_em: string;
 }
 
-/** Estados conceituais do Kanban — ver docs/product/03-atendimento-e-crm.md §3.2. */
+/** Estados conceituais do Kanban — ver docs/product/03-atendimento-e-crm.md §3.2.
+ * `cancelado` é o terminal de conversa abortada (spam, desistência, duplicada),
+ * distinto de `resolvido` (conclusão de fato) — ver migration 0031. */
 export type StatusAtendimento =
   | "ia_atendendo"
   | "solicitou_humano"
   | "humano_atendendo"
-  | "resolvido";
+  | "resolvido"
+  | "cancelado";
 
 export type Prioridade = "baixa" | "normal" | "alta";
 
@@ -239,9 +242,14 @@ export type EstagioOperacional =
  * etapa de fluxo voltem a se misturar sem o compilador reclamar. Os três
  * status de conversa colapsam numa única coluna "Em atendimento"; quem atende
  * continua distinguível pelo badge do card, que lê `atendimentos.status`
- * direto. */
+ * direto.
+ *
+ * `resolvido` E `cancelado` colapsam no mesmo valor de trânsito `resolvido`
+ * de propósito: os dois saem do board, e a etapa do board não precisa (nem
+ * deve) diferenciar "concluído" de "cancelado" — isso é leitura de
+ * `atendimentos.status`. */
 export function estagioDeAtendimento(status: StatusAtendimento): EstagioOperacional {
-  if (status === "resolvido") return "resolvido";
+  if (status === "resolvido" || status === "cancelado") return "resolvido";
   return "em_atendimento";
 }
 

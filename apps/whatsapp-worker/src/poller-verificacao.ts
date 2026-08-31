@@ -36,7 +36,9 @@ export function iniciarPollerVerificacao(client: Client): NodeJS.Timeout {
 
     const { data: pendentes, error } = await supabaseAdmin
       .from("verificacoes_telefone")
-      .select("id, telefone, codigo_envio, tentativas_envio, empresa_id, empresas(nome)")
+      .select(
+        "id, telefone, codigo_envio, tentativas_envio, empresa_id, empresas(nome)",
+      )
       .eq("empresa_id", env.empresaId)
       .is("enviado_em", null)
       .not("codigo_envio", "is", null)
@@ -48,7 +50,10 @@ export function iniciarPollerVerificacao(client: Client): NodeJS.Timeout {
       .limit(LOTE);
 
     if (error) {
-      console.error("[poller-verificacao] erro ao buscar códigos pendentes:", error.message);
+      console.error(
+        "[poller-verificacao] erro ao buscar códigos pendentes:",
+        error.message,
+      );
       return;
     }
 
@@ -71,18 +76,29 @@ export function iniciarPollerVerificacao(client: Client): NodeJS.Timeout {
       if (!reservado) continue;
 
       try {
-        await client.sendMessage(destino, textoMensagemVerificacao(nomeEmpresa, verificacao.codigo_envio!));
+        await client.sendMessage(
+          destino,
+          textoMensagemVerificacao(verificacao.codigo_envio!),
+        );
 
         await supabaseAdmin
           .from("verificacoes_telefone")
           // O código em claro é apagado no mesmo update do envio — a partir
           // daqui só o hash sobrevive, e só quem recebeu a mensagem sabe o
           // número.
-          .update({ enviado_em: new Date().toISOString(), codigo_envio: null, erro_envio: null })
+          .update({
+            enviado_em: new Date().toISOString(),
+            codigo_envio: null,
+            erro_envio: null,
+          })
           .eq("id", verificacao.id);
       } catch (sendError) {
-        const mensagem = sendError instanceof Error ? sendError.message : String(sendError);
-        console.error(`[poller-verificacao] falha ao enviar código ${verificacao.id}:`, mensagem);
+        const mensagem =
+          sendError instanceof Error ? sendError.message : String(sendError);
+        console.error(
+          `[poller-verificacao] falha ao enviar código ${verificacao.id}:`,
+          mensagem,
+        );
         // `enviado_em` continua null — a próxima rodada tenta de novo até o
         // código expirar. `erro_envio` é o que a página pública mostra pro
         // cliente ("não conseguimos enviar"), em vez de deixá-lo esperando

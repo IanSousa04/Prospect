@@ -122,7 +122,10 @@ export function mensagemDeIdentidade(
  * (arquitetura atual). `linkPublico` é a URL da loja; quando não disponível,
  * orienta genericamente sem prometer um link que não existe.
  */
-export function mensagemPedidoPeloLink(linkPublico: string | null, usaEmoji: boolean): string {
+export function mensagemPedidoPeloLink(
+  linkPublico: string | null,
+  usaEmoji: boolean,
+): string {
   const base = linkPublico
     ? `Os pedidos agora são feitos pelo nosso cardápio online — é por lá que você monta, altera e acompanha seu pedido: ${linkPublico}`
     : "Os pedidos agora são feitos pelo nosso cardápio online — é por lá que você monta, altera e acompanha seu pedido. Peça o link pra equipe se ainda não tiver recebido.";
@@ -137,7 +140,10 @@ export function mensagemPedidoPeloLink(linkPublico: string | null, usaEmoji: boo
  * online (link público), onde ele mesmo vê tudo e monta o pedido. `linkPublico`
  * é a URL da loja; quando não disponível, orienta genericamente.
  */
-export function mensagemCardapioPeloLink(linkPublico: string | null, usaEmoji: boolean): string {
+export function mensagemCardapioPeloLink(
+  linkPublico: string | null,
+  usaEmoji: boolean,
+): string {
   const base = linkPublico
     ? `O pedido é feito pelo nosso cardápio online — é por lá que você vê tudo o que temos e monta seu pedido: ${linkPublico}`
     : "O pedido é feito pelo nosso cardápio online — é por lá que você vê tudo o que temos e monta seu pedido. Peça o link pra equipe se ainda não tiver recebido.";
@@ -153,6 +159,6 @@ export function mensagemCardapioPeloLink(linkPublico: string | null, usaEmoji: b
  */
 export function trechoLinkPublico(linkPublico: string | null): string {
   return linkPublico
-    ? ` O pedido é feito pelo nosso cardápio online, por aqui: ${linkPublico}`
+    ? ` O pedido é feito pelo nosso cardápio online, por aqui:\n ${linkPublico}`
     : " O pedido é feito pelo nosso cardápio online — peça o link pra equipe se ainda não tiver recebido.";
 }

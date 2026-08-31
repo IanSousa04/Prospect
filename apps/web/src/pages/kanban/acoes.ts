@@ -1,7 +1,7 @@
 import type { AtendimentoComContexto } from "@prospect/shared";
 import { api } from "../../lib/api.js";
 
-export type ChaveAcao = "atender" | "confirmar" | "pronto" | "entregar" | "cancelar";
+export type ChaveAcao = "atender" | "confirmar" | "pronto" | "entregar" | "cancelar" | "cancelar_atendimento";
 
 export interface AcaoKanban {
   chave: ChaveAcao;
@@ -99,6 +99,26 @@ const CANCELAR: AcaoKanban = {
   executar: (a) => api.atualizarStatusPedido(a.pedido_estagio!.id, "cancelado"),
 };
 
+/** Cancelar a CONVERSA (não o pedido) — conversa abortada: spam, número
+ * errado, cliente desistiu, atendimento duplicado. Só existe quando NÃO há
+ * pedido ativo no card (nesse caso, o caminho é "Cancelar pedido" primeiro);
+ * conversa cancelada sai do board como terminal, igual `resolvido`. */
+const CANCELAR_ATENDIMENTO: AcaoKanban = {
+  chave: "cancelar_atendimento",
+  label: "Cancelar atendimento",
+  dica: "Cancelar esta conversa (spam, desistência, duplicada)",
+  destrutivo: true,
+  confirmacao: {
+    titulo: "Cancelar este atendimento?",
+    descricao:
+      "A conversa será marcada como cancelada e sairá do Kanban. Se o cliente escrever de novo, uma nova conversa começa com a IA.",
+    labelConfirmar: "Cancelar atendimento",
+    labelCancelar: "Voltar",
+  },
+  toast: "Atendimento cancelado",
+  executar: (a) => api.cancelarAtendimento(a.id),
+};
+
 /** Ações disponíveis num card, na ordem em que aparecem. Repare que
  * "Confirmar" não depende da coluna e sim do PEDIDO estar montado e não
  * confirmado: um pedido que a IA fechou sozinha precisa poder ir pra cozinha
@@ -112,6 +132,11 @@ export function acoesDoCard(a: AtendimentoComContexto): AcaoKanban[] {
   if (pedido?.status === "em_preparacao") acoes.push(PRONTO);
   if (pedido?.status === "pronto") acoes.push(ENTREGAR);
   if (pedido) acoes.push(CANCELAR);
+  // Sem pedido ativo, o caminho pra tirar a conversa do board é cancelar o
+  // ATENDIMENTO (resolvido/cancelado nem chegam aqui — saem do board).
+  if (!pedido && a.status !== "resolvido" && a.status !== "cancelado") {
+    acoes.push(CANCELAR_ATENDIMENTO);
+  }
 
   return acoes;
 }
@@ -126,6 +151,8 @@ const ERROS_LEGIVEIS: Record<string, string> = {
   atendimento_nao_encontrado: "Atendimento não encontrado — ele pode já ter sido encerrado.",
   handoff_nao_encontrado_ou_ja_assumido: "Outra pessoa já assumiu este atendimento.",
   handoff_pendente_impede_finalizar: "Existe um pedido de ajuda pendente neste atendimento.",
+  pedido_ativo_impede_cancelar: "Este atendimento tem um pedido ativo — cancele o pedido primeiro.",
+  atendimento_ja_encerrado: "Este atendimento já foi encerrado.",
 };
 
 export function mensagemDeErro(e: unknown): string {

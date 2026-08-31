@@ -4,8 +4,18 @@
 // imediato no formulário) e na API (fonte de verdade), e a única forma de
 // não terem duas implementações que divergem é morarem em `shared`.
 
-import type { EnderecoEntrega, FormaPagamento, StatusPedido, TipoEntrega } from "./pedidos.js";
-import type { Categoria, GrupoOpcoesComOpcoes, Ingrediente, Produto } from "./catalogo.js";
+import type {
+  EnderecoEntrega,
+  FormaPagamento,
+  StatusPedido,
+  TipoEntrega,
+} from "./pedidos.js";
+import type {
+  Categoria,
+  GrupoOpcoesComOpcoes,
+  Ingrediente,
+  Produto,
+} from "./catalogo.js";
 import type { FluxoPedidoConfig } from "./ia-config.js";
 import type { ResumoPedidoIa } from "./pedido-ia.js";
 import type { PublicoConfig } from "./publico-config.js";
@@ -55,7 +65,10 @@ export function normalizarTelefoneBr(entrada: string): string | null {
   const digitos = entrada.replace(/\D/g, "");
   if (!digitos) return null;
 
-  const semDdi = digitos.startsWith("55") && digitos.length >= 12 ? digitos.slice(2) : digitos;
+  const semDdi =
+    digitos.startsWith("55") && digitos.length >= 12
+      ? digitos.slice(2)
+      : digitos;
   if (semDdi.length !== 10 && semDdi.length !== 11) return null;
 
   const ddd = semDdi.slice(0, 2);
@@ -71,8 +84,10 @@ export function formatarTelefoneBr(telefone: string): string {
   const semDdi = telefone.startsWith("55") ? telefone.slice(2) : telefone;
   const ddd = semDdi.slice(0, 2);
   const local = semDdi.slice(2);
-  if (local.length === 9) return `(${ddd}) ${local.slice(0, 5)}-${local.slice(5)}`;
-  if (local.length === 8) return `(${ddd}) ${local.slice(0, 4)}-${local.slice(4)}`;
+  if (local.length === 9)
+    return `(${ddd}) ${local.slice(0, 5)}-${local.slice(5)}`;
+  if (local.length === 8)
+    return `(${ddd}) ${local.slice(0, 4)}-${local.slice(4)}`;
   return telefone;
 }
 
@@ -84,8 +99,10 @@ export function mascararTelefoneBr(telefone: string): string {
   const semDdi = telefone.startsWith("55") ? telefone.slice(2) : telefone;
   const ddd = semDdi.slice(0, 2);
   const local = semDdi.slice(2);
-  if (local.length === 9) return `(${ddd}) ${local.slice(0, 1)}****-${local.slice(5)}`;
-  if (local.length === 8) return `(${ddd}) ${local.slice(0, 1)}***-${local.slice(4)}`;
+  if (local.length === 9)
+    return `(${ddd}) ${local.slice(0, 1)}****-${local.slice(5)}`;
+  if (local.length === 8)
+    return `(${ddd}) ${local.slice(0, 1)}***-${local.slice(4)}`;
   return telefone;
 }
 
@@ -98,12 +115,30 @@ export function codigoVerificacaoValido(codigo: string): boolean {
  * junto das regras do fluxo evita que ele vire uma string solta perdida no
  * poller. Sem link e sem nada clicável de propósito: código de acesso em
  * mensagem com link é o formato que golpe usa. */
-export function textoMensagemVerificacao(nomeEmpresa: string, codigo: string): string {
+export function textoMensagemVerificacao(codigo: string): string {
   return (
-    `Seu código para fazer o pedido em *${nomeEmpresa}* é *${codigo}*.\n\n` +
+    `Seu código para fazer o pedido é *${codigo}*.\n\n` +
     `Ele vale por ${VALIDADE_CODIGO_MINUTOS} minutos. ` +
     `Se não foi você que pediu, é só ignorar esta mensagem.`
   );
+}
+
+/** Texto da notificação automática de progresso do pedido (mover o card no
+ * Kanban pra "Na cozinha" / "Pronto"). Também vive aqui por ser mensagem
+ * enviada FORA de `mensagens` (mesma razão de `textoMensagemVerificacao`):
+ * fonte única, e varia por `tipo_entrega` no `pronto` — "será entregue" não
+ * faz sentido num pedido de retirada. */
+export function textoNotificacaoStatusPedido(
+  status: "em_preparacao" | "pronto",
+  tipoEntrega: TipoEntrega,
+): string {
+  if (status === "em_preparacao") {
+    return "Seu pedido foi aprovado e já está sendo preparado!";
+  }
+  if (tipoEntrega === "retirada") {
+    return "Seu pedido está pronto para retirada!";
+  }
+  return "Seu pedido será entregue em breve!";
 }
 
 /** Dados da loja que a página pública precisa antes de qualquer login —

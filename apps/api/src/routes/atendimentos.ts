@@ -33,6 +33,9 @@ const TRANSICOES: Record<StatusAtendimento, StatusAtendimento[]> = {
   solicitou_humano: ["humano_atendendo", "ia_atendendo", "resolvido"],
   humano_atendendo: ["ia_atendendo", "resolvido"],
   resolvido: [],
+  // Terminal — "cancelar" tem rota própria com guardas (POST /cancelar), não
+  // passa pelo PATCH genérico.
+  cancelado: [],
 };
 
 /** Códigos de erro do serviço de carrinho que são falha de VALIDAÇÃO (400) —
@@ -242,6 +245,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       .eq("id", id)
       .eq("empresa_id", empresaId)
       .neq("status", "resolvido")
+      .neq("status", "cancelado")
       .select()
       .maybeSingle();
 
@@ -275,6 +279,7 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       .eq("empresa_id", empresaId)
       .neq("status", "ia_atendendo")
       .neq("status", "resolvido")
+      .neq("status", "cancelado")
       .select()
       .maybeSingle();
 
@@ -299,6 +304,75 @@ export async function atendimentosRoutes(app: FastifyInstance): Promise<void> {
       // (visível, corrigível na mão) do que reverter o que já deu certo.
       request.log.error(handoffError);
     }
+
+    return data;
+  });
+
+  // Cancelar atendimento — conversa abortada (spam, número errado, cliente
+  // desistiu, duplicada). Terminal como `resolvido`, mas semanticamente
+  // distinto: cancelado ≠ concluído (migration 0031). Duas guardas: (1) não
+  // pode cancelar conversa já terminal; (2) não pode cancelar com pedido
+  // ATIVO (aberto/em_preparacao/pronto) — primeiro cancela-se o pedido (a
+  // conversa continua aberta), depois o atendimento; do contrário o card
+  // sumiria do board escondendo um pedido em produção na cozinha. Resolve
+  // handoffs abertos/assumidos, mesmo tratamento que `/devolver-ia`.
+  app.post<{ Params: { id: string } }>("/atendimentos/:id/cancelar", async (request, reply) => {
+    const { empresaId } = request.auth!;
+    const { id } = request.params;
+
+    const { data: atual, error: buscaError } = await supabaseAdmin
+      .from("atendimentos")
+      .select("status, pedidos(status)")
+      .eq("id", id)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+
+    if (buscaError) {
+      request.log.error(buscaError);
+      return reply.code(500).send({ error: "erro_ao_buscar_atendimento" });
+    }
+    if (!atual) {
+      return reply.code(404).send({ error: "atendimento_nao_encontrado" });
+    }
+
+    if (atual.status === "resolvido" || atual.status === "cancelado") {
+      return reply.code(400).send({ error: "atendimento_ja_encerrado" });
+    }
+
+    const pedidoAtivo = ((atual as any).pedidos ?? []).some((p: any) =>
+      STATUS_PEDIDO_ATIVO.includes(p.status as StatusPedido),
+    );
+    if (pedidoAtivo) {
+      return reply.code(400).send({ error: "pedido_ativo_impede_cancelar" });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("atendimentos")
+      // Limpa responsável e cronômetro junto — mesma lógica de `/devolver-ia`:
+      // uma conversa cancelada não pode continuar exibindo quem atendia.
+      .update({ status: "cancelado", responsavel_usuario_id: null, assumido_em: null })
+      .eq("id", id)
+      .eq("empresa_id", empresaId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      request.log.error(error);
+      return reply.code(500).send({ error: "erro_ao_cancelar_atendimento" });
+    }
+    if (!data) {
+      return reply.code(404).send({ error: "atendimento_nao_encontrado" });
+    }
+
+    // Handoff pendente não faz sentido numa conversa cancelada — resolve igual
+    // a `/devolver-ia`. Falha é logada, não derruba o cancelamento (já feito).
+    const { error: handoffError } = await supabaseAdmin
+      .from("handoffs")
+      .update({ status: "resolvido", resolvido_em: new Date().toISOString() })
+      .eq("atendimento_id", id)
+      .eq("empresa_id", empresaId)
+      .in("status", ["aberto", "assumido"]);
+    if (handoffError) request.log.error(handoffError);
 
     return data;
   });

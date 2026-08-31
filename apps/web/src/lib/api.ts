@@ -77,6 +77,11 @@ export const api = {
     return res.json();
   },
 
+  async cancelarAtendimento(id: string): Promise<AtendimentoComContexto> {
+    const res = await authedFetch(`/atendimentos/${id}/cancelar`, { method: "POST" });
+    return res.json();
+  },
+
   async atualizarStatus(id: string, status: StatusAtendimento): Promise<AtendimentoComContexto> {
     const res = await authedFetch(`/atendimentos/${id}/status`, {
       method: "POST",

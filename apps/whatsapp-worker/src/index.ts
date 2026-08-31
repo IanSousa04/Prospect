@@ -11,6 +11,7 @@ import { criarHandoffMidiaNaoSuportada } from "./lib/handoff-midia.js";
 import { publicarStatus, iniciarPollerConexao } from "./lib/conexao.js";
 import { iniciarPoller } from "./poller.js";
 import { iniciarPollerVerificacao } from "./poller-verificacao.js";
+import { iniciarPollerNotificacoes } from "./poller-notificacoes.js";
 
 const { Client, LocalAuth } = pkg;
 
@@ -52,6 +53,9 @@ let intervalPoller: NodeJS.Timeout | null = null;
 // Poller próprio pros códigos da página pública — nunca passam por
 // `mensagens` (ver poller-verificacao.ts).
 let intervalPollerVerificacao: NodeJS.Timeout | null = null;
+// Poller próprio pras notificações de status de pedido — também nunca passam
+// por `mensagens` (ver poller-notificacoes.ts).
+let intervalPollerNotificacoes: NodeJS.Timeout | null = null;
 
 function registrarHandlers(c: ClientType): void {
   c.on("qr", (qr) => {
@@ -83,6 +87,8 @@ function registrarHandlers(c: ClientType): void {
     intervalPoller = iniciarPoller(c);
     if (intervalPollerVerificacao) clearInterval(intervalPollerVerificacao);
     intervalPollerVerificacao = iniciarPollerVerificacao(c);
+    if (intervalPollerNotificacoes) clearInterval(intervalPollerNotificacoes);
+    intervalPollerNotificacoes = iniciarPollerNotificacoes(c);
   });
 
   c.on("message", async (message) => {
@@ -197,6 +203,10 @@ function registrarHandlers(c: ClientType): void {
     if (intervalPollerVerificacao) {
       clearInterval(intervalPollerVerificacao);
       intervalPollerVerificacao = null;
+    }
+    if (intervalPollerNotificacoes) {
+      clearInterval(intervalPollerNotificacoes);
+      intervalPollerNotificacoes = null;
     }
     void publicarStatus("desconectado");
   });
