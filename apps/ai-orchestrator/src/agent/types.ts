@@ -59,9 +59,8 @@ export interface RelatorioInvestigacao {
 
 export type Confianca = "alta" | "media" | "baixa";
 
-/** MVP 1 não tem tool de escrita — risco é sempre 'baixo' (ver plano,
- * Passo 5). O tipo já existe pra não precisar redesenhar quando o MVP 2
- * (criar_pedido etc) chegar. */
+/** A IA é só leitura — risco é sempre 'baixo' (não existe ferramenta de
+ * escrita). O tipo fica por compatibilidade do schema de `ia_decisoes.risco`. */
 export type Risco = "baixo" | "medio" | "alto";
 
 export type AcaoDecidida = "responder" | "pedir_esclarecimento" | "handoff";

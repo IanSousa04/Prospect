@@ -17,7 +17,6 @@ import {
 import { gerarProximaFalaCliente } from "./simulador-cliente.js";
 import { julgarConducaoDaConversa } from "./juiz.js";
 import type { CenarioPersonaDef } from "./definicoes.js";
-import { afirmaPedidoConfirmado } from "../../agent/verificacao.js";
 
 export interface TurnoSimulado {
   cliente: string;
@@ -90,7 +89,6 @@ export async function rodarCenarioPersona(def: CenarioPersonaDef): Promise<Resul
   const motivosFalha: string[] = [];
   const turnos: TurnoSimulado[] = [];
   let houveHandoff = false;
-  let houveAfirmacaoDePedidoConfirmado = false;
 
   try {
     const config = await montarConfigDeProcessamentoDeTeste(empresaId, teste);
@@ -131,10 +129,6 @@ export async function rodarCenarioPersona(def: CenarioPersonaDef): Promise<Resul
       if (resultado.respostaTexto) {
         historico.push({ role: "assistant", content: resultado.respostaTexto });
 
-        if (afirmaPedidoConfirmado(resultado.respostaTexto)) {
-          houveAfirmacaoDePedidoConfirmado = true;
-        }
-
         // Ignora valores citados junto de "subtotal"/"total": são somas de
         // vários itens (não verificáveis contra preço unitário de
         // catálogo sem acesso às evidências internas da rodada, que
@@ -155,42 +149,6 @@ export async function rodarCenarioPersona(def: CenarioPersonaDef): Promise<Resul
 
     if (def.handoffEsperado && !houveHandoff) {
       motivosFalha.push("cenário de controle esperava handoff em algum momento, mas a conversa terminou sem nenhum");
-    }
-
-    // Checagem de ponta a ponta contra o banco real (não só a lógica
-    // isolada de verificacao.ts): se em algum turno a IA afirmou que o
-    // pedido foi confirmado, precisa existir de verdade um pedido criado
-    // pra este atendimento, com entrega e pagamento já definidos — nunca
-    // confia que "a IA disse que criou" significa "criou". Episódio real de
-    // produção que motivou esta checagem: a IA confirmou um pedido sem
-    // nunca ter perguntado tipo de entrega, endereço nem forma de pagamento.
-    if (houveAfirmacaoDePedidoConfirmado) {
-      const { data: pedidosCriados } = await supabaseAdmin
-        .from("pedidos")
-        .select("tipo_entrega, endereco_json, forma_pagamento")
-        .eq("atendimento_id", teste.atendimentoId)
-        .eq("empresa_id", empresaId);
-
-      if (!pedidosCriados || pedidosCriados.length === 0) {
-        motivosFalha.push(
-          "IA afirmou que o pedido foi confirmado, mas nenhum pedido real existe no banco pra este atendimento (alucinação de confirmação)",
-        );
-      } else {
-        for (const pedido of pedidosCriados) {
-          if (!pedido.tipo_entrega) {
-            motivosFalha.push("pedido criado no banco sem 'tipo_entrega' definido — IA confirmou sem ter perguntado entrega/retirada");
-          }
-          // Só exige forma_pagamento quando a empresa de teste pergunta essa
-          // etapa (motor de etapas configurável, tasks/0056/0077/0078) —
-          // desligada na config, o pedido fecha sem ela por design.
-          if (config.ctx.fluxoPedido.perguntar_forma_pagamento && !pedido.forma_pagamento) {
-            motivosFalha.push("pedido criado no banco sem 'forma_pagamento' definido — IA confirmou sem ter perguntado forma de pagamento");
-          }
-          if (pedido.tipo_entrega === "entrega" && !pedido.endereco_json) {
-            motivosFalha.push("pedido de entrega criado no banco sem 'endereco_json' definido — IA confirmou sem ter pedido o endereço");
-          }
-        }
-      }
     }
 
     const veredicto = await julgarConducaoDaConversa({

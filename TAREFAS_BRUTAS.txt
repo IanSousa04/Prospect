@@ -1,3 +1,6 @@
+- Quero modificar meu projeto, a IA não deve mais ser o centro da plataforma (executar ações de criar/cancelar pedido, adicionar itens...), o coração da plataforma é o link publico de receber o pedido, a IA deve apenas auxiliar nas dúvidas, enviar cardápio por categoria a pedido do cliente, informar prazo de entrega (inicialmente fixo de 60 a 90 minutos). Verifique o que é necessário para fazer essas alterações (RAG, embeddings, vetores e etc). Se necessário consulte um projeto semelhante em C:\Dev\Claude\Eddy.
+Deve remover as tasks (arquivo .md e do ROADMAP.md), que não fizerem mais sentido com essa nova arquitetura.
+
 - Na página publica deve ter a opção de editar o item do carrinho.
 
 - Se o whatsapp não estiver conectado a página publica deve exibir alguma mensagem de erro e não permitir o envio de código.

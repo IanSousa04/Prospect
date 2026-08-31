@@ -375,14 +375,14 @@ export interface ResumoPedidoIa extends OrderContext {
   ultimo_pedido_criado: UltimoPedidoCriado | null;
 }
 
-/** Resumo do Order Context — mesmo shape devolvido pelas tools de carrinho
- * pro Investigador (evidência real) e pela API pra UI (painel "Carrinho" no
- * atendimento, antes de existir um pedido de verdade, e editável pelo
- * humano — tarefa 0063). Um único formato, dois consumidores.
+/** Resumo do Order Context — mesmo shape devolvido pela página pública
+ * (POST/GET /publico/*) e pelo painel humano (GET /atendimentos/:id/carrinho)
+ * pra exibir o carrinho antes de virar um pedido de verdade, e editável pelo
+ * humano (tarefa 0063). Um único formato, dois consumidores.
  * `aguardandoConfirmacao` é opcional porque a maioria dos chamadores (toda
  * mutação de carrinho) não tem uma confirmação pendente fresca pra
- * reportar — só `consultar_carrinho` (ai-orchestrator) e o GET da API
- * carregam o valor real da sessão e passam explicitamente. */
+ * reportar — só o GET da API carrega o valor real da sessão e passa
+ * explicitamente. */
 export function resumoPedidoIa(
   pedido: OrderContext,
   aguardandoConfirmacao: AguardandoConfirmacao | null = null,

@@ -40,14 +40,16 @@ async function carregarConfigIa(empresaId: string): Promise<{
   nomeAssistente: string | null;
   comportamento: ComportamentoJson;
   fluxoPedido: FluxoPedidoConfig;
+  linkPublico: string | null;
 }> {
-  const [{ data: config }, { data: permissoesRows }] = await Promise.all([
+  const [{ data: config }, { data: permissoesRows }, { data: empresa }] = await Promise.all([
     supabaseAdmin
       .from("ia_configuracoes")
       .select("tom_de_voz, usa_emoji, nome_assistente, comportamento_json, fluxo_pedido_json")
       .eq("empresa_id", empresaId)
       .maybeSingle(),
     supabaseAdmin.from("ia_permissoes").select("*").eq("empresa_id", empresaId),
+    supabaseAdmin.from("empresas").select("slug").eq("id", empresaId).maybeSingle(),
   ]);
 
   // Nunca confia no shape cru do banco (pode estar vazio/desatualizado em
@@ -56,6 +58,11 @@ async function carregarConfigIa(empresaId: string): Promise<{
   // packages/shared/src/types.ts comentário em IaConfiguracao).
   const comportamentoParseado = ComportamentoJsonSchema.safeParse(config?.comportamento_json ?? {});
   const fluxoPedidoParseado = FluxoPedidoConfigSchema.safeParse(config?.fluxo_pedido_json ?? {});
+
+  const slug = empresa?.slug ?? null;
+  // A página pública do pedido vive em /delivery/:slug (apps/web/src/App.tsx) —
+  // sem esse segmento o link apontaria pra uma rota que não existe.
+  const linkPublico = slug && env.publicoBaseUrl ? `${env.publicoBaseUrl.replace(/\/+$/, "")}/delivery/${slug}` : null;
 
   return {
     // sem linha em ia_permissoes pra uma ferramenta = nenhuma permissão —
@@ -66,6 +73,7 @@ async function carregarConfigIa(empresaId: string): Promise<{
     nomeAssistente: config?.nome_assistente ?? null,
     comportamento: comportamentoParseado.success ? comportamentoParseado.data : {},
     fluxoPedido: fluxoPedidoParseado.success ? fluxoPedidoParseado.data : FLUXO_PEDIDO_CONFIG_PADRAO,
+    linkPublico,
   };
 }
 
@@ -196,6 +204,7 @@ async function processarUmaMensagem(rajada: MensagemCliente[]): Promise<void> {
     usaEmoji: config.usaEmoji,
     nomeAssistente: config.nomeAssistente,
     comportamento: config.comportamento,
+    linkPublico: config.linkPublico,
   });
 
   // As mensagens mais antigas da rajada não geram linha própria em

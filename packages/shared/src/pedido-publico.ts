@@ -114,9 +114,11 @@ export interface LojaPublica {
   nome: string;
   segmento: string | null;
   fluxo_pedido: FluxoPedidoConfig;
-  /** Texto de prazo cadastrado pela empresa, quando houver — nunca calculado
-   * aqui (CLAUDE.md regra 1). */
-  prazo_entrega_texto: string | null;
+  /** Range de prazo de entrega cadastrado pela empresa (default 60–90 min) —
+   * a MESMA fonte de verdade que a IA usa (`consultar_prazo_entrega`). Nunca
+   * calculado aqui (CLAUDE.md regra 1). */
+  prazo_entrega_min_minutos: number;
+  prazo_entrega_max_minutos: number;
   /** Aparência configurada na aba "Página pública" — cor de destaque, fonte e
    * organização dos produtos. Sempre presente (defaults se nunca configurou),
    * pra página aplicar as variáveis sem tratar estado ausente. */

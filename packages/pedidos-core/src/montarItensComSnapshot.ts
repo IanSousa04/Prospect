@@ -4,8 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * Monta os itens de um pedido com preço travado no catálogo real (snapshot)
  * — nunca confia em preço vindo do caller (CLAUDE.md regra 1: nenhum dado
  * comercial sem fonte rastreável). Compartilhada entre `POST /pedidos`
- * (painel humano, apps/api) e a tool `criar_pedido` da IA (apps/ai-orchestrator)
- * — a lógica de "o que pode ser vendido agora, por quanto" não pode divergir
+ * (painel humano, apps/api) e a página pública (`POST /publico/pedido`) — a
+ * lógica de "o que pode ser vendido agora, por quanto" não pode divergir
  * entre os dois caminhos.
  *
  * Validações cobertas (além do preço):

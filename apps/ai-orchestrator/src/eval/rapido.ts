@@ -7,11 +7,9 @@
 // Uso: npm run -w apps/ai-orchestrator eval:rapido
 import "dotenv/config";
 import { CASOS_DETERMINISTICOS } from "./deterministicos.js";
-import { CASOS_CHECKOUT } from "./checkout-deterministicos.js";
-import { CASOS_PIPELINE } from "./pipeline-deterministicos.js";
 
 async function main(): Promise<void> {
-  const casos = [...CASOS_DETERMINISTICOS, ...CASOS_CHECKOUT, ...CASOS_PIPELINE];
+  const casos = [...CASOS_DETERMINISTICOS];
   let falhas = 0;
 
   for (const caso of casos) {

@@ -2,9 +2,11 @@
 
 Documento único de roadmap do repositório (consolidação de 2026-08-26: `docs/product/*`, `docs/architecture/*` e `docs/arquitetura_em_etapas.md` foram incorporados aqui como tarefas e removidos, para eliminar conteúdo duplicado). Mesmo padrão de documento que o Eddy mantém (`C:\Dev\Claude\Eddy\docs\ROADMAP.md`): itens marcáveis, organizados por prioridade e área, com referência a arquivo quando aplicável.
 
-A partir de 2026-08-26, cada tarefa das seções 1 a 10 tem só o título aqui — a descrição completa (implementação, decisões, trade-offs) vive num arquivo próprio em [`tasks/`](tasks/), nomeado por ordem sequencial + resumo curto (ex. `tasks/0001-gabarito_eval.md`). Clique no link "detalhes" de cada item para ver o conteúdo completo.
+A partir de 2026-08-26, cada tarefa das seções 1 a 9 tem só o título aqui — a descrição completa (implementação, decisões, trade-offs) vive num arquivo próprio em [`tasks/`](tasks/), nomeado por ordem sequencial + resumo curto (ex. `tasks/0001-gabarito_eval.md`). Clique no link "detalhes" de cada item para ver o conteúdo completo.
 
 As regras invioláveis do produto (IA nunca inventa dado comercial, nunca infere permissão, separação orquestrador/atendente, handoff estruturado, isolamento multi-tenant, ações irreversíveis exigem confiança alta + baixo risco + permissão explícita, custo real de mensageria) vivem em [`CLAUDE.md`](CLAUDE.md) na raiz do repositório e não são repetidas aqui — são princípios permanentes, não tarefas.
+
+**Mudança de arquitetura (2026-08-30):** o link público virou o núcleo do pedido e a IA virou camada de assistência **somente leitura**. Toda a trilha de checkout/carrinho/escrita da IA (ferramentas de criação/cancelamento/alteração de pedido, Order Context mantido pela IA, workflow determinístico transacional) foi removida — as tarefas correspondentes saíram deste roadmap e de `tasks/`.
 
 Só documentação — nada aqui foi implementado ainda, a menos que marcado `[x]`.
 
@@ -29,25 +31,17 @@ Escala Fibonacci (1, 2, 3, 5, 8, 13), estimativa relativa de esforço/complexida
 
 ## 0. Visão de produto e fases do MVP
 
-Plataforma SaaS de atendimento e vendas conversacionais via WhatsApp para negócios de alimentação (hamburguerias, pizzarias, restaurantes, açaíterias, sushi bars, marmitarias, lanchonetes, delivery em geral). Proposta de valor: automatizar o atendimento e transformar conversas do WhatsApp em vendas, mantendo uma operação humana preparada para assumir os casos que realmente precisam de intervenção.
+Plataforma SaaS de atendimento e vendas via WhatsApp para negócios de alimentação (hamburguerias, pizzarias, restaurantes, açaíterias, sushi bars, marmitarias, lanchonetes, delivery em geral). Proposta de valor: o cliente faz e acompanha o pedido pelo **link público** (cardápio online) e a IA atua como **assistente de conversa** — tira dúvidas sobre cardápio, preços, prazos e políticas, e direciona pro link quando o cliente quer montar/alterar/cancelar um pedido.
+
+**Arquitetura (refatoração 2026-08-30):** o link público é o núcleo do pedido (criação + acompanhamento). A IA é uma camada de assistência **somente leitura** — responde perguntas sobre produtos/preços/prazos, direciona o cliente ao cardápio online (link público, onde ele mesmo vê o cardápio e monta o pedido) e informa prazo de entrega; nunca lista itens por conta própria, nunca cria pedido, nunca monta carrinho, nunca adiciona/remove/altera item, nunca cancela, nunca executa ação operacional.
 
 Fases do MVP (escopo de cada uma, para referência de onde cada tarefa das seções abaixo se encaixa):
 
-- **[x] Fase 1 — Atendimento IA.** Empresa, usuários, WhatsApp, clientes, conversas, IA, conhecimento, Kanban, handoff, histórico. Maior parte implementada — pendências residuais na seção 1 e 2 abaixo.
-- **[ ] Fase 2 — Catálogo Inteligente.** Categorias, produtos, ingredientes, modificadores, grupos de opções, adicionais, molhos, acompanhamentos, combos, recomendações, regras, indexação do catálogo. Estrutura relacional (produtos + grupos de opções + opções, combos referenciando grupos obrigatórios) validada contra o padrão de mercado iFood/Rappi — ver pendências na seção 5.
-- **[ ] Fase 3 — Pedidos.** Criação de pedido, itens, personalizações, consulta, status, alterações, integração com sistema externo, pagamento — ver pendências na seção 3 (fechar o ciclo comercial da IA) e seção 6.
-- **[ ] Fase 4 — Inteligência Comercial.** Upsell, cross-sell, reativação, recuperação de abandono, clientes recorrentes, campanhas, analytics comercial — ver seção 7.
-- **[ ] Fase 5 — Operação Autônoma.** Execução de ações, alterações automáticas, cancelamentos conforme regras, pagamentos, ocorrências, pós-venda, automação operacional — ainda não iniciada, depende de todas as fases anteriores.
+- **[x] Fase 1 — Atendimento IA.** Empresa, usuários, WhatsApp, clientes, conversas, IA, conhecimento, Kanban, handoff, histórico. Implementada — pendências residuais nas seções 1 e 2.
+- **[ ] Fase 2 — Catálogo Inteligente.** Categorias, produtos, ingredientes, modificadores, grupos de opções, adicionais, molhos, acompanhamentos, combos, recomendações, regras. Estrutura relacional validada contra o padrão iFood/Rappi — ver seção 5.
+- **[x] Fase 3 — Pedidos pelo link público.** Criação e acompanhamento de pedido pelo link direto (sem WhatsApp), com o mesmo Order Context visível/editável pelo painel humano. Implementada via task 0043; pendências operacionais (board unificado, impressão, pagamento, edição de pedido criado) na seção 6.
 
-Visão de longo prazo (V1 a V5, não são tarefas de uma fase específica — descrevem a trajetória de autonomia da IA ao longo de todas as fases acima):
-
-```
-V1 — Atendente:              Cliente → IA → Resposta
-V2 — Vendedor:                Cliente → IA → Produto → Personalização → Upsell → Pedido
-V3 — Atendimento Híbrido:     Cliente → IA → Resolve / Humano
-V4 — Copiloto:                Cliente → Humano (apoiado por IA)
-V5 — Operador Autônomo:       Cliente → IA → Entende → Consulta → Decide → Executa → Acompanha → Resolve
-```
+A **operação do pedido é humana** (Kanban/board, cozinha, entrega, pagamento) — a IA não executa nenhuma ação operacional. Não há mais trajetória de "autonomia" da IA (venda/cancelamento automático): isso saiu do escopo do produto.
 
 Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já implementa em produção, no mesmo domínio conceitual, a separação investigador/redator, cálculo de confiança com verificação de citação, ingestão versionada e sistema de gabaritos/eval — consultar `apps/query-api/src/agent.ts` e `docs/ROADMAP.md` do Eddy antes de reinventar qualquer padrão de orquestração/avaliação de IA.
 
@@ -71,7 +65,6 @@ Referência de arquitetura de IA: **projeto Eddy** (`C:\Dev\Claude\Eddy`) já im
 - [x] **[P1] Cliente manda imagem/áudio → handoff em vez de silêncio.** `SP: 3` ([detalhes](tasks/0009-midia_handoff.md))
 - [x] **[P1] Guard determinístico contra prompt injection via conhecimento/resultados de ferramenta.** `SP: 8` ([detalhes](tasks/0010-guard_prompt_injection.md))
 - [x] **[P1] `ia_sessoes` em uso (memória derivada da conversa).** `SP: 5` ([detalhes](tasks/0011-ia_sessoes.md))
-- [x] **[P1] Filtrar afirmação comercial especulativa sem fonte + verificação aritmética de valor somado (handoff silencioso).** `SP: 3` ([detalhes](tasks/0074-verificacao_aritmetica_resumo_carrinho.md))
 
 ---
 
@@ -84,56 +77,21 @@ O Kanban de atendimento (`apps/web/src/pages/Kanban.tsx`) está sendo unificado 
 - [x] **[P2] `POST /atendimentos/:id/status` não valida transição nenhuma.** `SP: 3` ([detalhes](tasks/0015-validar_transicao_status.md))
 - [x] **[P2] Cliente (CRM simplificado) — campos de personalização ainda não confirmados em uso.** `SP: 3` ([detalhes](tasks/0016-crm_personalizacao.md))
 
-## 3. Camada de IA — MVP 2 e além (P2)
+## 3. Camada de IA — assistente somente leitura (P2)
 
-Reorganizada em 2026-08-27 por ordem de dependência lógica dentro de cada prioridade (não só por número); os 3 épicos de 13 SP (`criar_pedido`, tools de escrita restantes, migração do WhatsApp) foram quebrados em subtarefas menores — os itens originais continuam em `tasks/` como referência de desenho/contexto, mas saem da lista marcável abaixo (ver nota "Desmembrada em" em cada um).
+A IA responde perguntas sobre produtos/preços/prazos, direciona o cliente ao cardápio online (link público — onde ele mesmo vê o cardápio e monta o pedido) e informa prazo de entrega (range fixo). Ela **não tem nenhuma ferramenta de escrita**: não cria pedido, não monta carrinho, não adiciona/remove/altera item, não cancela. O pedido é feito e acompanhado pelo link público (task 0043, seção 6) e operado por humanos no board.
 
-**CLAUDE.md regra 8** (adicionada 2026-08-27): todo item nesta seção que introduz um novo campo/estrutura de estado gerenciado pela IA precisa de uma contraparte de gerenciamento humano na UI, sobre o MESMO estado — nunca um estado paralelo. Ver a tarefa [0063](tasks/0063-gerenciar_carrinho_ia_ui.md) (UI do carrinho/Order Context) e as notas cruzadas já deixadas em 0018/0019/0020/0055/0057/0058/0059.
-
-### 3.1 Fechar o ciclo comercial da IA (realizar pedido) — P1
-
-Hoje a IA só **consulta** (catálogo, pedido, cliente) — nunca **executa** uma venda. Ordem de dependência: Order Context → tools de carrinho → confirmação/criação é o caminho mínimo pra IA fechar uma venda de ponta a ponta; tipo de entrega, endereço e forma de pagamento entram entre o carrinho e a confirmação; o motor genérico de etapas é stretch opcional, só depois do resto validado em produção.
-
-- [x] **[P1] Order Context — estado estruturado do pedido em construção.** `SP: 5` ([detalhes](tasks/0053-order_context.md))
-- [x] **[P1] Tools de carrinho (`add_to_cart`, `remove_from_cart`, `update_cart_item`, `get_cart`, `calculate_cart`).** `SP: 5` ([detalhes](tasks/0054-tools_carrinho.md))
-- [x] **[P1] Gerenciar o carrinho da IA (Order Context) direto da UI — humano edita o mesmo estado.** `SP: 8` ([detalhes](tasks/0063-gerenciar_carrinho_ia_ui.md))
-- [x] **[P1] Perguntar tipo de entrega (retirada vs. entrega) antes de endereço.** `SP: 3` ([detalhes](tasks/0018-tipo_entrega.md))
-- [x] **[P1] Salvar endereço do cliente e confirmar reuso no próximo pedido.** `SP: 5` ([detalhes](tasks/0020-endereco_cliente.md))
-- [x] **[P1] Perguntar/confirmar forma de pagamento.** `SP: 3` ([detalhes](tasks/0019-forma_pagamento.md))
-- [x] **[P1] Confirmação explícita do pedido + criação real em `pedidos`/`itens_pedido`.** `SP: 3` ([detalhes](tasks/0055-confirmacao_criacao_pedido.md))
-- [x] **[P1] Bug: endereço não atualiza na UI quando o cliente informa/corrige pelo WhatsApp.** `SP: 2` ([detalhes](tasks/0076-endereco_nao_atualiza_ui.md))
-- [x] **[P1] Bug: IA não finalizava pedido simples (cliente confirmando só com "Sim" virava handoff mudo) + motor de etapas configurável (escopo mínimo) + opções de entrega/formas de pagamento configuráveis por empresa.** `SP: 8` ([detalhes](tasks/0080-gate_confirmacao_pedido_e_motor_etapas.md))
-- [x] **[P0] Workflow transacional determinístico — a LLM perde autoridade sobre estado, ferramentas e confirmação (corrige o bug estrutural que travava o checkout inteiro).** `SP: 13` ([detalhes](tasks/0081-workflow_deterministico_checkout.md))
-- [x] **[P0] Pipeline "nada sai sem lastro" — montagem determinística do carrinho, roteamento obrigatório de perguntas e gate de lastro por afirmação.** `SP: 13` ([detalhes](tasks/0082-pipeline_lastro.md))
-- [x] **[P2] Motor genérico de etapas configurável por empresa (escopo mínimo entregue via 0080 — framework de módulos genérico continua stretch futuro).** `SP: 5` ([detalhes](tasks/0056-motor_generico_etapas.md))
-- [x] **[P2] Opções de entrega (retirada/entrega) configuráveis por empresa.** `SP: 3` ([detalhes](tasks/0077-opcoes_entrega_configuraveis.md))
-- [x] **[P2] Formas de pagamento configuráveis por empresa + deixar claro pra IA que o pagamento é feito ao entregador, nunca pela plataforma.** `SP: 5` ([detalhes](tasks/0078-formas_pagamento_configuraveis.md))
-- [ ] **[P2] Verificar endereço informado via API simples e gratuita, questionando o cliente se não encontrar.** `SP: 3` ([detalhes](tasks/0079-verificacao_endereco_api.md))
-
-### 3.2 Hardening da camada de escrita — P2
-
-Depende do ciclo comercial mínimo (3.1) estar rodando: risco real na matriz de decisão precisa existir antes/junto das próximas tools de escrita ligarem em produção real (é o que decide se uma ação irreversível vira handoff); confirmação humana e as tools `adicionar_item`/`alterar_item`/`cancelar_pedido`/`atualizar_cliente` expandem a superfície de escrita depois que o padrão estiver validado por `criar_pedido`.
-
-- [x] **[P2] Risco real na matriz de decisão + enforcement das permissões de escrita.** `SP: 8` ([detalhes](tasks/0023-risco_matriz_decisao.md))
-- [x] **[P2] Fluxo de confirmação humana fora do texto livre.** `SP: 8` ([detalhes](tasks/0022-confirmacao_humana.md))
-- [ ] **[P2] Tools `adicionar_item` / `alterar_item`.** `SP: 8` ([detalhes](tasks/0057-adicionar_alterar_item.md))
-- [ ] **[P2] Tool `cancelar_pedido`.** `SP: 3` ([detalhes](tasks/0058-cancelar_pedido.md))
-- [ ] **[P2] Tool `atualizar_cliente`.** `SP: 2` ([detalhes](tasks/0059-atualizar_cliente.md))
-
-### 3.3 Qualidade, cobertura e performance — P2
-
-Sem dependência forte do ciclo comercial — podem entrar em paralelo a qualquer momento. Itens já concluídos ficam registrados aqui por serem da mesma família (qualidade da resposta da IA).
+### 3.1 Qualidade, cobertura e performance — P2
 
 - [x] **[P2] Ferramentas de operação — confirmar cobertura completa.** `SP: 3` ([detalhes](tasks/0032-ferramentas_operacao.md))
-- [x] **[P2] Tool `consultar_prazo_entrega` + config de prazo padrão vs. calculado (toggle na UI).** `SP: 5` ([detalhes](tasks/0075-prazo_entrega.md))
+- [x] **[P2] Prazo de entrega como range fixo (fonte única IA + link público).** `SP: 3` ([detalhes](tasks/0084-prazo_entrega_range.md))
+- [x] **[P2] Opções de entrega (retirada/entrega) configuráveis por empresa.** `SP: 3` ([detalhes](tasks/0077-opcoes_entrega_configuraveis.md))
+- [x] **[P2] Formas de pagamento configuráveis por empresa (consumidas pelo link público e pela tool `consultar_opcoes_atendimento`).** `SP: 5` ([detalhes](tasks/0078-formas_pagamento_configuraveis.md))
 - [x] **Agrupar mensagens rápidas do cliente antes de responder.** `SP: 3` ([detalhes](tasks/0030-agrupar_mensagens.md))
 - [x] **Formatação das respostas deve usar a sintaxe real do WhatsApp, não Markdown genérico.** `SP: 2` ([detalhes](tasks/0031-formatacao_whatsapp.md))
 - [ ] **[P2] Cache.** `SP: 5` ([detalhes](tasks/0025-cache.md))
-- [ ] **[P2] Embeddings/versionamento de conhecimento.** `SP: 8` ([detalhes](tasks/0026-embeddings_versionamento.md))
 
-### 3.4 Infraestrutura, configuração e canal WhatsApp — P2
-
-Independente do ciclo comercial. Ordem sugerida: topologia do orchestrator antes do `.env` porque `EMPRESA_ID` só some de vez quando a topologia muda; a trilha do WhatsApp oficial (monitorar → avaliar provedores → migrar) é sequencial por natureza e pode rodar em paralelo às outras duas.
+### 3.2 Infraestrutura, configuração e canal WhatsApp — P2
 
 **Nota do usuário (2026-08-28):** a migração de verdade para a API oficial (tarefa 0062) é deliberadamente a ÚLTIMA tarefa do roadmap inteiro — não só desta seção. Monitorar risco (0060) e avaliar provedores (0061) podem avançar normalmente, mas não execute 0062 antes de esgotar todo o resto do roadmap.
 
@@ -159,9 +117,9 @@ Independente do ciclo comercial. Ordem sugerida: topologia do orchestrator antes
 - [ ] **[P2] Templates por segmento** `SP: 5` ([detalhes](tasks/0039-templates_segmento.md))
 - [ ] **[P2] Promoções como conceito próprio** `SP: 8` ([detalhes](tasks/0040-promocoes_proprias.md))
 
-## 6. Pedidos (Fase 3) — P2
+## 6. Pedidos (Fase 3 — link público + operação humana) — P2
 
-Board operacional unificado adicionado em 2026-08-27 (pedido do usuário): hoje o Kanban de atendimento e o status do pedido são conceitos separados, e um pedido some do radar operacional assim que o atendimento é marcado resolvido. Ordem de dependência: 0064/0065 (simplificação dos status, podem ser feitas em paralelo) → 0066 (derivação do estágio unificado + arquivamento) → 0067 (Kanban reconstruído) → 0068 (drag-and-drop) / 0072 (teste de carga, testar a versão final).
+Board operacional unificado (pedido do usuário): hoje o Kanban de atendimento e o status do pedido são conceitos separados, e um pedido some do radar operacional assim que o atendimento é marcado resolvido. Ordem de dependência: 0064/0065 (simplificação dos status, em paralelo) → 0066 (derivação do estágio unificado + arquivamento) → 0067 (Kanban reconstruído) → 0068 (drag-and-drop) / 0072 (teste de carga).
 
 - [ ] **[P2] Mesclar "IA solicitou humano"/"Cliente solicitou humano" num único status "Solicitou humano".** `SP: 3` ([detalhes](tasks/0064-mesclar_solicitou_humano.md))
 - [ ] **[P2] Simplificar `StatusPedido` (aberto/confirmado/em_preparo → `em_preparacao`; pronto/saiu_para_entrega → `pronto`).** `SP: 3` ([detalhes](tasks/0065-simplificar_status_pedido.md))
@@ -175,20 +133,16 @@ Board operacional unificado adicionado em 2026-08-27 (pedido do usuário): hoje 
 - [ ] **[P2] Gateway de pagamento real** `SP: 13` ([detalhes](tasks/0042-gateway_pagamento.md))
 - [x] **[P2] Página pública de cardápio/pedido (link direto, sem WhatsApp).** `SP: 8` ([detalhes](tasks/0043-pagina_publica_pedido.md))
 
-## 7. Inteligência Comercial (Fase 4) — P2
-
-- [ ] **[P2] Campanhas de reengajamento** `SP: 13` ([detalhes](tasks/0044-campanhas_reengajamento.md))
-
-## 8. Telas do produto original ainda não implementadas — P2
+## 7. Telas do produto original ainda não implementadas — P2
 
 - [ ] **[P2] Dashboard operacional.** `SP: 8` ([detalhes](tasks/0045-dashboard_operacional.md))
 
-## 9. Multi-tenant / onboarding — P2
+## 8. Multi-tenant / onboarding — P2
 
 - [ ] **[P2] Nenhum fluxo de cadastro de empresa nova** `SP: 8` ([detalhes](tasks/0046-cadastro_empresa.md))
 - [ ] **[P2] Nenhuma tela de convite/gestão de usuários do painel** `SP: 5` ([detalhes](tasks/0047-gestao_usuarios.md))
 
-## 10. Infraestrutura / produção — P2
+## 9. Infraestrutura / produção — P2
 
 - [ ] **[P2] Testes automatizados gerais + CI/CD.** `SP: 13` ([detalhes](tasks/0048-testes_cicd.md))
 - [ ] **[P2] Nenhum rate limiting nas rotas HTTP de `apps/api`** `SP: 3` ([detalhes](tasks/0049-rate_limiting.md))

@@ -125,8 +125,8 @@ async function auditarComModelo(texto: string, fatos: FatoParaLastro[], chat: Ch
   } catch {
     // Auditor indisponível não pode travar a conversa: a camada
     // determinística de contradição já rodou, e as verificações
-    // específicas (valor, produto, afirmação transacional) continuam
-    // valendo em `verificacao.ts` e `checkout/truth-gate.ts`.
+    // específicas (valor, produto, promessa) continuam valendo em
+    // `verificacao.ts`.
     return [];
   }
 }

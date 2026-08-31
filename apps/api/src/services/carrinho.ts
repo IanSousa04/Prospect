@@ -184,10 +184,8 @@ export async function lerCarrinho(
 }
 
 /** Adiciona um item ao carrinho com a mesma validação de preço/
- * disponibilidade real que a tool `adicionar_ao_carrinho` da IA usa
- * (`montarItensComSnapshot`, CLAUDE.md regra 1), e a mesma mesclagem de
- * linha equivalente pra nunca duplicar (tarefa 0054, episódio real do loop
- * de duplicação). */
+ * disponibilidade real (`montarItensComSnapshot`, CLAUDE.md regra 1), e a
+ * mesma mesclagem de linha equivalente pra nunca duplicar. */
 export async function adicionarItemAoCarrinho(
   supabase: SupabaseClient,
   empresaId: string,

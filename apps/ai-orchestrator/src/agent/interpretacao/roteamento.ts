@@ -1,36 +1,32 @@
-// Roteamento de perguntas (tarefa 0082) — o LLM rotula o ASSUNTO, o código
-// escolhe e executa a ferramenta.
+// Roteamento de perguntas — o LLM rotula o ASSUNTO, o código escolhe e
+// executa a ferramenta.
 //
-// Motivação direta: numa conversa real, o cliente disse "É para entrega" e a
-// IA respondeu "no momento a gente não tá fazendo entregas" com ZERO
-// ferramentas chamadas naquele turno — enquanto a configuração da empresa
-// oferecia entrega. Não foi um erro de raciocínio; foi ausência de qualquer
-// obrigação de consultar antes de afirmar.
-//
-// Com o roteamento, nenhuma pergunta de negócio é respondida sem pelo menos
-// uma execução real por trás. Se a ferramenta rodar e vier vazia, isso vira
-// um fato ("não há X cadastrado") e a IA admite a lacuna — nunca improvisa.
+// Garantia determinística (CLAUDE.md regra 1): nenhuma pergunta de negócio é
+// respondida sem pelo menos uma execução real por trás. Se a ferramenta rodar
+// e vier vazia, isso vira um fato ("não há X cadastrado") e a IA admite a
+// lacuna — nunca improvisa.
 import type { NomeFerramenta } from "@prospect/shared";
-import type { ToolContext } from "../../tools/index.js";
+import { executeTool, type ResultadoExecucaoTool, type ToolContext } from "../../tools/index.js";
 import type { EvidenciaColetada } from "../investigador.js";
-import { erroDaExecucao, type FalhaDeFerramenta, type PortasDoWorkflow } from "../portas.js";
 import type { AssuntoPerguntado } from "./mensagem.js";
+
+export interface FalhaDeFerramenta {
+  tool: NomeFerramenta;
+  erro: string;
+}
 
 /** Ferramentas obrigatórias por assunto. Nunca é o modelo que escolhe.
  *
- * Duas decisões que valem comentário:
- *
- * - `area_entrega` consulta `consultar_regiao` E `consultar_taxa`. As duas
- *   leem `conhecimento_itens` filtrando por categoria fixa, e a empresa real
- *   cadastrou a área de entrega na categoria `entrega` (que é a de
- *   `consultar_taxa`), não em `regiao`. Consultar só uma devolvia vazio pra
- *   uma informação que existia.
- * - `opcoes_atendimento` consulta SÓ a configuração, e de propósito: ela é a
- *   fonte da verdade sobre o que a loja oferece (decisão do usuário na
- *   tarefa 0082). Incluir `buscar_conhecimento` aqui traria de volta o texto
- *   livre que hoje contradiz a config sobre formas de pagamento. */
+ * - `area_entrega` consulta `consultar_regiao` E `consultar_taxa` (empresa
+ *   real cadastra a área de entrega na categoria `entrega`, não em `regiao`).
+ * - `opcoes_atendimento` consulta SÓ a configuração: ela é a fonte da verdade
+ *   sobre o que a loja oferece, sem o texto livre que a contradiz.
+ */
 export const TOOLS_POR_ASSUNTO: Record<AssuntoPerguntado, NomeFerramenta[]> = {
-  cardapio: ["buscar_produtos", "buscar_combos"],
+  // `cardapio` nunca chega aqui: o orquestrador intercepta antes e redireciona
+  // o cliente pro cardápio online (link público), sem listar itens — ver
+  // orquestrador.ts. Lista vazia mantém o Record tipado e não roda tool nenhuma.
+  cardapio: [],
   preco: ["buscar_produtos"],
   adicionais: ["buscar_adicionais"],
   combos: ["buscar_combos"],
@@ -49,15 +45,15 @@ export const TOOLS_POR_ASSUNTO: Record<AssuntoPerguntado, NomeFerramenta[]> = {
 
 /** Ferramentas que exigem um produto de referência — sem ele não há o que
  * consultar, e o assunto fica sem resposta em vez de ser chamado com um id
- * inventado. */
+ * inventado. O id vem do `ultimo_produto_mencionado` da sessão (se houver);
+ * fora isso, o próprio Investigador resolve o produto e chama a tool. */
 const EXIGEM_PRODUTO = new Set<NomeFerramenta>(["buscar_adicionais", "buscar_recomendacoes"]);
 
 export interface ResultadoRoteamento {
   evidencias: EvidenciaColetada[];
   falhas: FalhaDeFerramenta[];
   /** Assuntos cuja ferramenta rodou mas não trouxe nada, ou que não puderam
-   * ser consultados. Viram o fato "não tenho essa informação cadastrada",
-   * que é o que autoriza a IA a admitir a lacuna honestamente. */
+   * ser consultados. Viram o fato "não tenho essa informação cadastrada". */
   assuntosSemResposta: AssuntoPerguntado[];
 }
 
@@ -65,18 +61,20 @@ function saidaEhVazia(output: unknown): boolean {
   if (!output || typeof output !== "object") return true;
   const obj = output as Record<string, unknown>;
   if (typeof obj.erro === "string") return true;
-  for (const campo of ["resultados", "grupos", "recomendacoes", "pedidos"]) {
+  for (const campo of ["resultados", "grupos", "recomendacoes", "pedidos", "categorias"]) {
     if (campo in obj && Array.isArray(obj[campo])) return (obj[campo] as unknown[]).length === 0;
   }
   return false;
 }
 
+function erroDaExecucao(execucao: ResultadoExecucaoTool): string | null {
+  return execucao.sucesso ? null : (execucao.erro ?? "ferramenta_falhou");
+}
+
 function entradaPara(tool: NomeFerramenta, produtoDeReferencia: string | null, termoLivre: string): unknown {
   if (EXIGEM_PRODUTO.has(tool)) return { produto_id: produtoDeReferencia };
   if (tool === "buscar_conhecimento") return { termo: termoLivre };
-  // As demais listam tudo que está ativo (sem termo) ou não têm parâmetro —
-  // listar o cardápio inteiro garante evidência pra qualquer pergunta sobre
-  // produto, inclusive preço de um item que o cliente citou só de passagem.
+  // As demais listam tudo que está ativo (sem termo) ou não têm parâmetro.
   return {};
 }
 
@@ -87,16 +85,14 @@ function entradaPara(tool: NomeFerramenta, produtoDeReferencia: string | null, t
 export async function resolverPerguntas(params: {
   perguntas: AssuntoPerguntado[];
   ctx: ToolContext;
-  portas: PortasDoWorkflow;
   /** Produto para os assuntos que precisam de um (`adicionais`,
-   * `recomendacao`) — último item adicionado, item do carrinho ou
-   * `ultimo_produto_mencionado` da sessão. */
+   * `recomendacao`) — vem do `ultimo_produto_mencionado` da sessão. */
   produtoDeReferencia?: string | null;
   /** Texto da mensagem do cliente, usado como termo de `buscar_conhecimento`
    * no assunto `outro`. */
   termoLivre: string;
 }): Promise<ResultadoRoteamento> {
-  const { perguntas, ctx, portas, termoLivre } = params;
+  const { perguntas, ctx, termoLivre } = params;
   const produtoDeReferencia = params.produtoDeReferencia ?? null;
 
   const resultado: ResultadoRoteamento = { evidencias: [], falhas: [], assuntosSemResposta: [] };
@@ -115,7 +111,7 @@ export async function resolverPerguntas(params: {
         continue;
       }
 
-      const execucao = await portas.executar(tool, entradaPara(tool, produtoDeReferencia, termoLivre), ctx);
+      const execucao = await executeTool(tool, entradaPara(tool, produtoDeReferencia, termoLivre), ctx);
       if (execucao.sucesso && execucao.execucaoId) {
         resultado.evidencias.push({ execucaoId: execucao.execucaoId, toolNome: tool, output: execucao.output });
       }

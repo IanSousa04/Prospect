@@ -161,6 +161,7 @@ export interface ConfigDeProcessamentoDeTeste {
   usaEmoji: boolean;
   nomeAssistente: string | null;
   comportamento: ReturnType<typeof ComportamentoJsonSchema.parse>;
+  linkPublico: string | null;
 }
 
 /** Monta a config real da empresa (permissões, tom de voz, comportamento)
@@ -199,6 +200,7 @@ export async function montarConfigDeProcessamentoDeTeste(
     usaEmoji: config?.usa_emoji ?? true,
     nomeAssistente: config?.nome_assistente ?? null,
     comportamento,
+    linkPublico: null,
   };
 }
 

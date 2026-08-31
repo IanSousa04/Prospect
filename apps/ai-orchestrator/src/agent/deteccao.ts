@@ -97,60 +97,6 @@ export function pedeIdentidade(texto: string): boolean {
 }
 
 /**
- * Detecção de confirmação curta e inequívoca do resumo final do pedido
- * ("sim", "confirmo", "pode confirmar", "fechar assim"...) — DETERMINÍSTICA,
- * mesmo motivo das anteriores e do padrão consolidado pela indústria pra IA
- * conversacional transacional (Rasa CALM trata a etapa de confirmação como
- * um "slot" preenchido deterministicamente, nunca por interpretação livre
- * do LLM a cada turno — ver a nota de pesquisa no plano desta tarefa).
- *
- * Episódio real que motivou isto: cliente respondeu só "Sim" a um resumo de
- * pedido já apresentado, e o Investigador (LLM) não chamou "criar_pedido"
- * nesta rodada — o Atendente escreveu "Pedido confirmado!" de boa-fé sem
- * nenhuma criação real ter acontecido, e só a verificação anti-alucinação
- * pegou isso, tarde demais (handoff mudo em vez de fechar o pedido).
- *
- * Ancorado na mensagem inteira (mesmo estilo de `pedeTempoReal`/
- * `pedeIdentidade`) — nunca casa uma confirmação embutida no meio de uma
- * mensagem mais longa/composta (ex.: "sim, mas quero trocar o pagamento").
- */
-const PADROES_CONFIRMACAO_PEDIDO: RegExp[] = [
-  /^\s*(sim|confirmo|confirmado|confirma|confirmar|isso\s+mesmo|isso|[ée]\s+isso(\s+mesmo)?|isso\s+a[íi]|correto|est[aá]\s+(certo|correto)|t[aá]\s+certo|tudo\s+certo|tudo\s+ok|tudo\s+bem|perfeito|pode\s+(confirmar|mandar|ir|fechar|finalizar|enviar|seguir)|manda\s+ver|fechar\s+assim|fechado|fechou|finaliza(r)?|pode|ok(ay)?|beleza|blz|t[aá]\s+bom|show|certo|combinado|isso\s+a[ií]\s+mesmo)\s*[^A-Za-zÀ-ú0-9]*$/i,
-];
-
-/**
- * Reconhecimento determinístico de confirmação curta e inequívoca — atalho
- * grátis do extrator de intenção (agent/checkout/intencao.ts): quando casa,
- * nem chega a gastar uma chamada de LLM. Continua ancorado na mensagem
- * inteira, então nunca casa uma confirmação embutida numa mensagem composta
- * ("sim, mas troca o pagamento") — esse caso vai pro extrator, que enxerga o
- * estado do workflow e sabe separar as duas coisas.
- *
- * IMPORTANTE (tarefa 0081): casar aqui NÃO autoriza nada sozinho. Quem
- * decide se existe algo pra confirmar é a máquina de estados
- * (`derivarEstadoCheckout`) — fora de `aguardando_confirmacao`, um "tudo
- * certo" continua sendo conversa social.
- */
-export function confirmaResumoPendente(texto: string): boolean {
-  return PADROES_CONFIRMACAO_PEDIDO.some((regex) => regex.test(texto));
-}
-
-/**
- * Negação curta e inequívoca ("não", "ainda não", "espera") — o par
- * simétrico de `confirmaResumoPendente`. Existe pelo mesmo motivo: uma
- * recusa ao resumo final nunca pode ser confundida com confirmação nem
- * escorregar pro julgamento livre do modelo, e reconhecê-la em código evita
- * gastar uma chamada de LLM no caso mais comum.
- */
-const PADROES_NEGACAO_PEDIDO: RegExp[] = [
-  /^\s*(n[ãa]o|nao|n|nn|ainda\s+n[ãa]o|agora\s+n[ãa]o|espera(\s+a[ií])?|pera(\s+a[ií])?|calma|nada\s+disso|de\s+jeito\s+nenhum|cancela(r)?|deixa\s+pra\s+l[áa])\s*[^A-Za-zÀ-ú0-9]*$/i,
-];
-
-export function negaResumoPendente(texto: string): boolean {
-  return PADROES_NEGACAO_PEDIDO.some((regex) => regex.test(texto));
-}
-
-/**
  * Resposta FIXA sobre a identidade da IA — texto montado em código, nunca
  * pelo LLM. `nomeAssistente` vem de `ia_configuracoes.nome_assistente`
  * (dado real configurado pela empresa); quando não configurado, usa um
@@ -167,4 +113,46 @@ export function mensagemDeIdentidade(
   const complemento =
     " Se preferir, posso te transferir pra um atendente humano — é só pedir.";
   return usaEmoji ? `${base}${complemento} 🤖` : `${base}${complemento}`;
+}
+
+/**
+ * Resposta FIXA pro cliente que quer montar/criar/alterar/cancelar um pedido
+ * — texto montado em código, nunca pelo LLM. A IA não tem (e não deve ter)
+ * nenhuma ação de pedido: o pedido é feito e gerenciado pelo link público
+ * (arquitetura atual). `linkPublico` é a URL da loja; quando não disponível,
+ * orienta genericamente sem prometer um link que não existe.
+ */
+export function mensagemPedidoPeloLink(linkPublico: string | null, usaEmoji: boolean): string {
+  const base = linkPublico
+    ? `Os pedidos agora são feitos pelo nosso cardápio online — é por lá que você monta, altera e acompanha seu pedido: ${linkPublico}`
+    : "Os pedidos agora são feitos pelo nosso cardápio online — é por lá que você monta, altera e acompanha seu pedido. Peça o link pra equipe se ainda não tiver recebido.";
+  const complemento =
+    " Eu sigo aqui pra tirar dúvidas sobre o cardápio, preços e prazos.";
+  return usaEmoji ? `${base}.${complemento} 🙌` : `${base}.${complemento}`;
+}
+
+/**
+ * Resposta FIXA pro cliente que pede o cardápio — texto montado em código,
+ * nunca pelo LLM. A IA não lista os itens: direciona o cliente ao cardápio
+ * online (link público), onde ele mesmo vê tudo e monta o pedido. `linkPublico`
+ * é a URL da loja; quando não disponível, orienta genericamente.
+ */
+export function mensagemCardapioPeloLink(linkPublico: string | null, usaEmoji: boolean): string {
+  const base = linkPublico
+    ? `O pedido é feito pelo nosso cardápio online — é por lá que você vê tudo o que temos e monta seu pedido: ${linkPublico}`
+    : "O pedido é feito pelo nosso cardápio online — é por lá que você vê tudo o que temos e monta seu pedido. Peça o link pra equipe se ainda não tiver recebido.";
+  const complemento = " Fico por aqui pra tirar qualquer dúvida.";
+  return usaEmoji ? `${base}.${complemento} 😊` : `${base}.${complemento}`;
+}
+
+/**
+ * Rodapé fixo que orienta o cliente a fazer o pedido pelo cardápio online —
+ * anexado (em código, nunca pelo LLM) à primeira mensagem da conversa e a
+ * respostas sobre produtos/catálogo. `linkPublico` é a URL da loja; quando
+ * não disponível, orienta genericamente sem prometer uma URL que não existe.
+ */
+export function trechoLinkPublico(linkPublico: string | null): string {
+  return linkPublico
+    ? ` O pedido é feito pelo nosso cardápio online, por aqui: ${linkPublico}`
+    : " O pedido é feito pelo nosso cardápio online — peça o link pra equipe se ainda não tiver recebido.";
 }

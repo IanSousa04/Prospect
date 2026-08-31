@@ -19,7 +19,6 @@ import type {
   NumeroWhitelist,
   Pedido,
   PedidoDetalhado,
-  PrazoEntregaModo,
   Produto,
   ProdutoDetalhado,
   PublicoConfig,
@@ -376,8 +375,8 @@ export interface IaConfiguracaoResposta {
   usa_emoji: boolean;
   nome_assistente: string | null;
   comportamento_json: ComportamentoJson;
-  prazo_entrega_modo: PrazoEntregaModo;
-  prazo_entrega_texto: string | null;
+  prazo_entrega_min_minutos: number;
+  prazo_entrega_max_minutos: number;
   fluxo_pedido: FluxoPedidoConfig;
 }
 

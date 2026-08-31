@@ -24,25 +24,12 @@ export const NOMES_FERRAMENTAS = [
   "buscar_adicionais",
   "buscar_combos",
   "buscar_recomendacoes",
-  // cliente
+  // cliente (só leitura)
   "consultar_cliente",
   "consultar_historico",
-  "atualizar_cliente",
-  // pedido
+  // pedido (só leitura — acompanhar, nunca alterar)
   "consultar_pedido",
-  "criar_pedido",
-  "adicionar_item",
-  "alterar_item",
-  "cancelar_pedido",
   "consultar_status",
-  // carrinho (pedido em construção, antes de existir — ver ia_sessoes.estado_json.pedido)
-  "adicionar_ao_carrinho",
-  "remover_do_carrinho",
-  "atualizar_item_carrinho",
-  "consultar_carrinho",
-  "definir_tipo_entrega",
-  "definir_endereco_entrega",
-  "definir_forma_pagamento",
   // operação
   "consultar_horario",
   "consultar_taxa",
@@ -50,9 +37,9 @@ export const NOMES_FERRAMENTAS = [
   "consultar_politica",
   // conhecimento
   "buscar_conhecimento",
-  // operação (calculado a partir da fila real, nunca inventado — ver tasks/0075)
+  // prazo de entrega (range fixo configurável, nunca calculado)
   "consultar_prazo_entrega",
-  // configuração da própria empresa como evidência auditável (tasks/0082) —
+  // configuração da própria empresa como evidência auditável —
   // o que a loja oferece de entrega e aceita de pagamento
   "consultar_opcoes_atendimento",
 ] as const;
@@ -78,13 +65,18 @@ export type ComportamentoJson = z.infer<typeof ComportamentoJsonSchema>;
 export const TONS_DE_VOZ = ["formal", "neutro", "amigavel", "descontraido"] as const;
 export type TomDeVoz = (typeof TONS_DE_VOZ)[number];
 
-/** Modo de resposta pra "quanto tempo demora meu pedido?" (tasks/0075).
- * `padrao`: texto fixo cadastrado pela empresa, a IA nunca calcula.
- * `calculado`: a tool `consultar_prazo_entrega` soma fila + tempo de preparo
- * real dos produtos — só faz sentido com `tempo_preparo_minutos` cadastrado
- * no catálogo. */
-export const PRAZO_ENTREGA_MODOS = ["padrao", "calculado"] as const;
-export type PrazoEntregaModo = (typeof PRAZO_ENTREGA_MODOS)[number];
+/** Prazo de entrega: RANGE fixo configurável por empresa (default 60–90 min),
+ * a ÚNICA fonte de verdade entre a IA (`consultar_prazo_entrega`) e a página
+ * pública (GET /publico/:slug). A IA nunca calcula prazo — sempre lê o range
+ * cadastrado (CLAUDE.md regra 1). */
+export const PRAZO_ENTREGA_MIN_PADRAO = 60;
+export const PRAZO_ENTREGA_MAX_PADRAO = 90;
+
+/** Texto exibido pro cliente final ("60 a 90 min") — compartilhado entre IA
+ * e página pública pra nunca divergirem na estimativa. */
+export function formatarPrazoEntrega(minMinutos: number, maxMinutos: number): string {
+  return minMinutos === maxMinutos ? `${minMinutos} min` : `${minMinutos} a ${maxMinutos} min`;
+}
 
 /** Motor de etapas do pedido (tasks/0056/0077/0078) — cada empresa configura
  * quais etapas fazem sentido pro próprio negócio, em vez de toda empresa ser
@@ -119,8 +111,8 @@ export const AtualizarIaConfiguracaoSchema = z
     usa_emoji: z.boolean(),
     nome_assistente: z.string().trim().max(60).nullable(),
     comportamento_json: ComportamentoJsonSchema,
-    prazo_entrega_modo: z.enum(PRAZO_ENTREGA_MODOS),
-    prazo_entrega_texto: z.string().trim().max(120).nullable(),
+    prazo_entrega_min_minutos: z.number().int().positive(),
+    prazo_entrega_max_minutos: z.number().int().positive(),
     fluxo_pedido: FluxoPedidoConfigSchema,
   })
   .strict();

@@ -37,6 +37,8 @@ import {
   FluxoPedidoConfigSchema,
   INTERVALO_REENVIO_SEGUNDOS,
   MAX_TENTATIVAS_CODIGO,
+  PRAZO_ENTREGA_MAX_PADRAO,
+  PRAZO_ENTREGA_MIN_PADRAO,
   PUBLICO_CONFIG_PADRAO,
   PublicoConfigSchema,
   VALIDADE_CODIGO_MINUTOS,
@@ -253,7 +255,7 @@ export async function publicoRoutes(app: FastifyInstance): Promise<void> {
 
       const { data: config } = await supabaseAdmin
         .from("ia_configuracoes")
-        .select("fluxo_pedido_json, prazo_entrega_texto, publico_json")
+        .select("fluxo_pedido_json, prazo_entrega_min_minutos, prazo_entrega_max_minutos, publico_json")
         .eq("empresa_id", empresa.id)
         .maybeSingle();
 
@@ -269,9 +271,12 @@ export async function publicoRoutes(app: FastifyInstance): Promise<void> {
         nome: empresa.nome,
         segmento: empresa.segmento,
         fluxo_pedido: fluxo.success ? fluxo.data : FLUXO_PEDIDO_CONFIG_PADRAO,
-        // Texto cadastrado pela empresa ou nada — a página nunca estima prazo
-        // por conta própria (CLAUDE.md regra 1).
-        prazo_entrega_texto: config?.prazo_entrega_texto ?? null,
+        // Range de prazo cadastrado pela empresa (default 60–90) — a página
+        // nunca estima prazo por conta própria (CLAUDE.md regra 1).
+        prazo_entrega_min_minutos:
+          config?.prazo_entrega_min_minutos ?? PRAZO_ENTREGA_MIN_PADRAO,
+        prazo_entrega_max_minutos:
+          config?.prazo_entrega_max_minutos ?? PRAZO_ENTREGA_MAX_PADRAO,
         aparencia: aparencia.success ? aparencia.data : PUBLICO_CONFIG_PADRAO,
       };
       return loja;

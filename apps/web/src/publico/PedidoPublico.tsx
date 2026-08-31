@@ -11,6 +11,7 @@ import type {
   ResumoPedidoIa,
   TipoEntrega,
 } from "@prospect/shared";
+import { formatarPrazoEntrega } from "@prospect/shared";
 import { apiPublica, apagarToken, lerToken, mensagemDeErro, salvarToken } from "./apiPublico.js";
 import { aparenciaClasse, aparenciaVars } from "./aparencia.js";
 import Identificacao from "./Identificacao.js";
@@ -269,7 +270,9 @@ export default function PedidoPublico() {
             <span className="pp-ident-inicial">{loja.nome.slice(0, 1).toUpperCase()}</span>
             <div>
               <h1 className="pp-topo-loja">{loja.nome}</h1>
-              {loja.prazo_entrega_texto && <p className="pp-topo-prazo">{loja.prazo_entrega_texto}</p>}
+              <p className="pp-topo-prazo">
+                Entrega em {formatarPrazoEntrega(loja.prazo_entrega_min_minutos, loja.prazo_entrega_max_minutos)}
+              </p>
             </div>
           </div>
           <button

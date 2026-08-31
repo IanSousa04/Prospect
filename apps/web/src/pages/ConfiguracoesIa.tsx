@@ -4,11 +4,10 @@ import type {
   FormaPagamento,
   NomeFerramenta,
   NumeroWhitelist,
-  PrazoEntregaModo,
   TipoEntrega,
   TomDeVoz,
 } from "@prospect/shared";
-import { FORMAS_PAGAMENTO, PRAZO_ENTREGA_MODOS, TIPOS_ENTREGA, TONS_DE_VOZ } from "@prospect/shared";
+import { FORMAS_PAGAMENTO, TIPOS_ENTREGA, TONS_DE_VOZ } from "@prospect/shared";
 import { api, type IaConfiguracaoResposta, type IaPermissaoOuPadrao } from "../lib/api.js";
 import Topbar from "../components/Topbar.js";
 import "./ConfiguracoesIa.css";
@@ -16,28 +15,22 @@ import "./ConfiguracoesIa.css";
 const GRUPOS: Array<{ titulo: string; ferramentas: NomeFerramenta[] }> = [
   {
     titulo: "Catálogo",
-    ferramentas: ["buscar_produtos", "buscar_opcoes", "buscar_adicionais", "buscar_combos", "buscar_recomendacoes"],
-  },
-  { titulo: "Cliente", ferramentas: ["consultar_cliente", "consultar_historico", "atualizar_cliente"] },
-  {
-    titulo: "Carrinho (pedido em construção, antes de existir)",
     ferramentas: [
-      "adicionar_ao_carrinho",
-      "remover_do_carrinho",
-      "atualizar_item_carrinho",
-      "consultar_carrinho",
-      "definir_tipo_entrega",
-      "definir_endereco_entrega",
-      "definir_forma_pagamento",
+      "buscar_produtos",
+      "buscar_opcoes",
+      "buscar_adicionais",
+      "buscar_combos",
+      "buscar_recomendacoes",
     ],
   },
+  { titulo: "Cliente", ferramentas: ["consultar_cliente", "consultar_historico"] },
   {
-    titulo: "Pedido",
-    ferramentas: ["consultar_pedido", "criar_pedido", "adicionar_item", "alterar_item", "cancelar_pedido", "consultar_status"],
+    titulo: "Pedido (somente leitura)",
+    ferramentas: ["consultar_pedido", "consultar_status"],
   },
   {
     titulo: "Operação",
-    ferramentas: ["consultar_horario", "consultar_taxa", "consultar_regiao", "consultar_politica", "consultar_prazo_entrega"],
+    ferramentas: ["consultar_horario", "consultar_taxa", "consultar_regiao", "consultar_politica", "consultar_prazo_entrega", "consultar_opcoes_atendimento"],
   },
   { titulo: "Conhecimento", ferramentas: ["buscar_conhecimento"] },
 ];
@@ -50,31 +43,15 @@ const DESCRICOES: Partial<Record<NomeFerramenta, string>> = {
   buscar_recomendacoes: "Sugerir produtos relacionados (upsell/cross-sell).",
   consultar_cliente: "Ver dados do cliente da conversa atual.",
   consultar_historico: "Ver pedidos anteriores do cliente da conversa atual.",
-  atualizar_cliente: "Ainda não implementada — reservada para o MVP 2.",
-  adicionar_ao_carrinho: "Adicionar um produto/combo ao carrinho do pedido em construção.",
-  remover_do_carrinho: "Remover um item do carrinho do pedido em construção.",
-  atualizar_item_carrinho: "Mudar quantidade/observação de um item já no carrinho.",
-  consultar_carrinho: "Ver o carrinho atual (itens, subtotal, o que falta pra fechar o pedido).",
-  definir_tipo_entrega: "Registrar se o pedido é entrega ou retirada, depois de perguntar ao cliente.",
-  definir_endereco_entrega: "Registrar o endereço de entrega do pedido (e salvar como padrão do cliente pra próxima vez).",
-  definir_forma_pagamento: "Registrar a forma de pagamento escolhida pelo cliente (sem cobrança real ainda).",
   consultar_pedido: "Ver detalhes do pedido da conversa atual.",
-  criar_pedido: "Confirma e cria de verdade o pedido, a partir do carrinho que a IA montou — ação irreversível com impacto financeiro real.",
-  adicionar_item: "Ainda não implementada — reservada para o MVP 2.",
-  alterar_item: "Ainda não implementada — reservada para o MVP 2.",
-  cancelar_pedido: "Ainda não implementada — reservada para o MVP 2.",
   consultar_status: "Ver só o status do pedido atual.",
   consultar_horario: "Consultar horário de funcionamento cadastrado.",
   consultar_taxa: "Consultar regras de taxa de entrega cadastradas.",
   consultar_regiao: "Consultar regiões de entrega cadastradas.",
   consultar_politica: "Consultar políticas gerais cadastradas.",
   buscar_conhecimento: "Buscar em FAQ/políticas por texto livre.",
-  consultar_prazo_entrega: "Responder 'quanto tempo demora meu pedido?' — texto fixo cadastrado ou cálculo real pela fila, conforme o modo configurado abaixo.",
-};
-
-const LABELS_PRAZO_ENTREGA_MODO: Record<PrazoEntregaModo, string> = {
-  padrao: "Texto fixo",
-  calculado: "Calculado pela fila",
+  consultar_prazo_entrega: "Responder 'quanto tempo demora meu pedido?' com o range de prazo configurado abaixo (nunca calcula).",
+  consultar_opcoes_atendimento: "Informar o que a loja oferece: tipos de entrega e formas de pagamento.",
 };
 
 const LABELS_TOM_DE_VOZ: Record<TomDeVoz, string> = {
@@ -238,43 +215,6 @@ export default function ConfiguracoesIa() {
     }
   }
 
-  async function atualizarValorMaximo(nome: NomeFerramenta, valor: number | null) {
-    const atual = porFerramenta(nome);
-    setPermissoes((lista) =>
-      lista.map((p) => (p.ferramenta === nome ? { ...p, valor_maximo_sem_handoff: valor } : p)),
-    );
-    setSalvando(nome);
-    try {
-      await api.salvarIaPermissao({
-        ferramenta: nome,
-        permitido: atual?.permitido ?? false,
-        exige_confirmacao_humana: atual?.exige_confirmacao_humana ?? null,
-        valor_maximo_sem_handoff: valor,
-      });
-    } finally {
-      setSalvando(null);
-    }
-  }
-
-  async function alternarExigeConfirmacaoHumana(nome: NomeFerramenta) {
-    const atual = porFerramenta(nome);
-    const novoValor = !(atual?.exige_confirmacao_humana ?? false);
-    setPermissoes((lista) =>
-      lista.map((p) => (p.ferramenta === nome ? { ...p, exige_confirmacao_humana: novoValor } : p)),
-    );
-    setSalvando(nome);
-    try {
-      await api.salvarIaPermissao({
-        ferramenta: nome,
-        permitido: atual?.permitido ?? false,
-        exige_confirmacao_humana: novoValor,
-        valor_maximo_sem_handoff: atual?.valor_maximo_sem_handoff ?? null,
-      });
-    } finally {
-      setSalvando(null);
-    }
-  }
-
   if (carregando || !config) {
     return <div className="empty-state">Carregando…</div>;
   }
@@ -350,71 +290,58 @@ export default function ConfiguracoesIa() {
         <section className="secao">
           <div className="secao-titulo">Prazo de entrega</div>
           <p className="secao-desc">
-            Como a IA responde "quanto tempo demora meu pedido?". {salvandoConfig && <span className="salvando-hint">salvando…</span>}
+            O range que a IA e a página pública usam pra responder "quanto tempo demora meu pedido?" — a mesma fonte
+            de verdade, nunca calculado. {salvandoConfig && <span className="salvando-hint">salvando…</span>}
           </p>
 
           <div className="ferramenta-row">
             <div className="ferramenta-top">
               <div>
-                <div className="campo-label">Modo</div>
-                <div className="ferramenta-desc">
-                  Texto fixo: a IA sempre responde o valor cadastrado abaixo, nunca calcula. Calculado pela fila:
-                  soma o tempo de preparo (cadastrado por produto) dos pedidos ainda pendentes — exige a ferramenta
-                  "consultar_prazo_entrega" permitida abaixo.
-                </div>
+                <div className="campo-label">Tempo mínimo (minutos)</div>
+                <div className="ferramenta-desc">Limite inferior do prazo informado ao cliente.</div>
               </div>
-              <select
-                className="campo-select"
-                value={config.prazo_entrega_modo}
-                onChange={(e) => salvarConfig({ ...config, prazo_entrega_modo: e.target.value as PrazoEntregaModo })}
-              >
-                {PRAZO_ENTREGA_MODOS.map((m) => (
-                  <option key={m} value={m}>
-                    {LABELS_PRAZO_ENTREGA_MODO[m]}
-                  </option>
-                ))}
-              </select>
+              <input
+                className="campo-numero"
+                type="number"
+                min={1}
+                value={config.prazo_entrega_min_minutos}
+                onChange={(e) =>
+                  salvarConfig({ ...config, prazo_entrega_min_minutos: Math.max(1, Number(e.target.value)) })
+                }
+              />
             </div>
           </div>
 
-          {config.prazo_entrega_modo === "padrao" && (
-            <div className="ferramenta-row">
-              <label className="campo-label" htmlFor="prazo-entrega-texto">
-                Texto do prazo
-              </label>
+          <div className="ferramenta-row">
+            <div className="ferramenta-top">
+              <div>
+                <div className="campo-label">Tempo máximo (minutos)</div>
+                <div className="ferramenta-desc">Limite superior do prazo informado ao cliente.</div>
+              </div>
               <input
-                id="prazo-entrega-texto"
-                className="campo-texto"
-                type="text"
-                placeholder="Ex.: 30-45 minutos"
-                defaultValue={config.prazo_entrega_texto ?? ""}
-                onBlur={(e) => salvarConfig({ ...config, prazo_entrega_texto: e.target.value.trim() || null })}
+                className="campo-numero"
+                type="number"
+                min={1}
+                value={config.prazo_entrega_max_minutos}
+                onChange={(e) =>
+                  salvarConfig({ ...config, prazo_entrega_max_minutos: Math.max(1, Number(e.target.value)) })
+                }
               />
             </div>
-          )}
-
-          {config.prazo_entrega_modo === "calculado" && (
-            <div className="ferramenta-row">
-              <div className="ferramenta-desc">
-                Cadastre o tempo de preparo de cada produto no catálogo — produto sem esse campo não entra no
-                cálculo. Não esqueça de permitir a ferramenta "consultar_prazo_entrega" na seção de permissões
-                abaixo.
-              </div>
-            </div>
-          )}
+          </div>
         </section>
 
         <section className="secao">
-          <div className="secao-titulo">Fluxo do pedido</div>
+          <div className="secao-titulo">Opções de atendimento</div>
           <p className="secao-desc">
-            Quais etapas a IA pergunta antes de fechar um pedido — cada empresa tem um negócio diferente (só
-            balcão, só delivery, não quer negociar pagamento pelo WhatsApp). {salvandoConfig && <span className="salvando-hint">salvando…</span>}
+            O que a loja oferece de entrega/retirada e formas de pagamento — aparece no link público e a IA informa
+            via "consultar_opcoes_atendimento". {salvandoConfig && <span className="salvando-hint">salvando…</span>}
           </p>
 
           <div className="ferramenta-row">
             <div className="campo-label">Tipos de entrega oferecidos</div>
             <div className="ferramenta-desc">
-              Com só uma opção marcada, a IA nem pergunta — já assume esse tipo automaticamente.
+              Com só uma opção marcada, o link público nem pergunta — já assume esse tipo automaticamente.
             </div>
             {TIPOS_ENTREGA.map((tipo) => {
               const ligado = config.fluxo_pedido.tipos_entrega_oferecidos.includes(tipo);
@@ -521,30 +448,6 @@ export default function ConfiguracoesIa() {
                         <div className="toggle-knob" />
                       </div>
                     </div>
-                    {nome === "criar_pedido" && ligado && (
-                      <div className="extra-fields">
-                        <label className="extra-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={permissao?.exige_confirmacao_humana ?? false}
-                            onChange={() => alternarExigeConfirmacaoHumana(nome)}
-                          />
-                          Sempre exigir confirmação humana antes de criar (nunca cria sozinha)
-                        </label>
-                        <label className="extra-field">
-                          Valor máximo sem handoff (acima disso, sempre pede confirmação humana)
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={permissao?.valor_maximo_sem_handoff ?? ""}
-                            onChange={(e) =>
-                              atualizarValorMaximo(nome, e.target.value ? Number(e.target.value) : null)
-                            }
-                          />
-                        </label>
-                        {salvando === nome && <span className="salvando-hint">salvando…</span>}
-                      </div>
-                    )}
                   </div>
                 );
               })}

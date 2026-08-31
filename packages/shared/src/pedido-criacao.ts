@@ -1,12 +1,11 @@
 // Criação real de um pedido em `pedidos`/`itens_pedido` — fonte única
-// compartilhada entre `POST /pedidos` (painel humano, apps/api) e a tool
-// `criar_pedido` da IA (apps/ai-orchestrator, tarefa 0055). Mesma razão de
+// compartilhada entre `POST /pedidos` (painel humano, apps/api) e a página
+// pública (`POST /publico/pedido`). A IA não cria pedido. Mesma razão de
 // `montarItensComSnapshot` estar em `packages/pedidos-core`: os dois
 // caminhos não podem divergir na lógica de "como um pedido nasce".
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { montarItensComSnapshot, type ItemPedidoInput } from "@prospect/pedidos-core";
 import type { EnderecoEntrega, FormaPagamento, OrigemPedido, Pedido, TipoEntrega } from "./pedidos.js";
-import { avaliarRiscoAcao, type ConfiguracaoRiscoAcao } from "./risco-acao.js";
 
 export interface CriarPedidoParams {
   empresaId: string;
@@ -22,30 +21,6 @@ export interface CriarPedidoParams {
 }
 
 export type CriarPedidoResultado = { ok: true; pedido: Pedido } | { ok: false; erro: string };
-
-export type MotivoBloqueioCriarPedido = "empresa_exige_confirmacao_humana" | "valor_acima_do_limite_sem_handoff";
-
-/** Gate de risco real pra `criar_pedido` (tarefa 0055, CLAUDE.md regra 6:
- * ação irreversível com impacto financeiro exige confiança alta + baixo
- * risco + permissão explícita — confiança alta sozinha não basta). Wrapper
- * fino sobre a matriz de risco genérica (`risco-acao.ts`, tarefa 0023) —
- * `criar_pedido` não tem conceito de status prévio (não existe pedido
- * anterior nesta ação), então só passa `valorFinanceiro`. Mantido com essa
- * assinatura específica pra não quebrar `tools/pedido.ts` nem os testes
- * determinísticos existentes. */
-export function avaliarRiscoCriarPedido(
-  permissao: { exige_confirmacao_humana: boolean | null; valor_maximo_sem_handoff: number | null } | undefined,
-  total: number,
-): { bloqueado: false } | { bloqueado: true; motivo: MotivoBloqueioCriarPedido } {
-  const configuracao: ConfiguracaoRiscoAcao | undefined = permissao && {
-    ...permissao,
-    condicoes_json: null,
-  };
-  const resultado = avaliarRiscoAcao({ permissao: configuracao, valorFinanceiro: total });
-  return resultado.bloqueado
-    ? { bloqueado: true, motivo: resultado.motivo as MotivoBloqueioCriarPedido }
-    : { bloqueado: false };
-}
 
 export async function criarPedidoComItens(
   supabase: SupabaseClient,
